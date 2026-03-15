@@ -1,0 +1,61 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function approved() {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.status == 'approved';
+    }
+
+    function imageOrPdf() {
+      return request.resource.contentType.matches('image/.*')
+        || request.resource.contentType == 'application/pdf';
+    }
+
+    match /profile-images/{uid}/{fileName} {
+      allow read: if approved();
+      allow write: if approved()
+        && request.auth.uid == uid
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    match /gallery/{uid}/{fileName} {
+      allow read: if approved();
+      allow write: if approved()
+        && request.auth.uid == uid
+        && request.resource.size < 10 * 1024 * 1024
+        && imageOrPdf();
+    }
+
+    match /documents/{uid}/{fileName} {
+      allow read: if approved();
+      allow write: if approved()
+        && request.auth.uid == uid
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType == 'application/pdf';
+    }
+
+    match /associations/{relatedType}/{uid}/{relatedId}/{fileName} {
+      allow read: if approved();
+      allow create: if approved()
+        && request.auth.uid == uid
+        && request.resource.size < 10 * 1024 * 1024
+        && imageOrPdf();
+      allow delete: if approved() && request.auth.uid == uid;
+    }
+
+    match /bulletin/{uid}/{fileName} {
+      allow read: if approved();
+      allow write: if approved()
+        && request.auth.uid == uid
+        && request.resource.size < 10 * 1024 * 1024
+        && imageOrPdf();
+    }
+  }
+}

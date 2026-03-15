@@ -1,0 +1,165 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function hasUserDoc() {
+      return signedIn() && exists(userPath(request.auth.uid));
+    }
+
+    function userData() {
+      return get(userPath(request.auth.uid)).data;
+    }
+
+    function isApproved() {
+      return hasUserDoc() && userData().status == 'approved';
+    }
+
+    function isAdmin() {
+      return isApproved() && userData().role == 'admin';
+    }
+
+    function isOrganizer() {
+      return isApproved() && (userData().role == 'organizer' || userData().role == 'admin');
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).changedKeys();
+    }
+
+    function isBootstrapAdminEmail() {
+      return signedIn() && request.auth.token.email == 'admin@hunteinvest.com';
+    }
+
+    function isBootstrapAdminWrite(uid) {
+      return isOwner(uid)
+        && isBootstrapAdminEmail()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.status == 'approved'
+        && request.resource.data.role == 'admin';
+    }
+
+    function registrationAllowed(uid) {
+      return request.resource.data.id == uid
+        && request.resource.data.attendeeName is string
+        && request.resource.data.email is string
+        && request.resource.data.rsvpStatus in ['attending', 'maybe', 'not-attending'];
+    }
+
+    match /users/{uid} {
+      allow create: if (
+          isOwner(uid)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.role == 'member'
+        ) || isBootstrapAdminWrite(uid);
+
+      allow get: if isOwner(uid) || isAdmin();
+      allow list: if isAdmin();
+
+      allow update: if (
+          isOwner(uid)
+          && changedKeys().hasOnly(['displayName', 'photoURL', 'bio', 'phone', 'city', 'updatedAt'])
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.status == resource.data.status
+          && request.resource.data.role == resource.data.role
+        ) || isBootstrapAdminWrite(uid);
+
+      allow delete: if false;
+    }
+
+    match /directory/{uid} {
+      allow read: if isApproved();
+      allow write: if false;
+    }
+
+    match /groups/{groupId} {
+      allow read: if isApproved();
+      allow write: if isOrganizer();
+    }
+
+    match /registrations/{uid} {
+      allow read: if isOwner(uid) || isOrganizer();
+      allow create, update: if isOwner(uid) && registrationAllowed(uid);
+      allow delete: if false;
+    }
+
+    match /events/{eventId} {
+      allow read: if isApproved();
+      allow create, update, delete: if isOrganizer();
+    }
+
+    match /hotels/{hotelId} {
+      allow read: if isApproved();
+      allow create, update, delete: if isOrganizer();
+    }
+
+    match /bulletinPosts/{postId} {
+      allow read: if isApproved();
+      allow create: if isApproved()
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.body is string;
+      allow update, delete: if isApproved()
+        && (resource.data.authorUid == request.auth.uid || isOrganizer());
+    }
+
+    match /bulletinComments/{commentId} {
+      allow read: if isApproved();
+      allow create: if isApproved()
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.postId is string
+        && request.resource.data.body is string;
+      allow update, delete: if isApproved()
+        && (resource.data.authorUid == request.auth.uid || isOrganizer());
+    }
+
+    match /threads/{threadId} {
+      allow read: if isApproved() && request.auth.uid in resource.data.participantIds;
+      allow create: if isApproved()
+        && request.auth.uid in request.resource.data.participantIds
+        && request.resource.data.participantIds.size() >= 2
+        && request.resource.data.participantIds.size() <= 10;
+      allow update: if isApproved()
+        && request.auth.uid in resource.data.participantIds
+        && request.resource.data.participantIds == resource.data.participantIds;
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isApproved()
+          && request.auth.uid in get(/databases/$(database)/documents/threads/$(threadId)).data.participantIds;
+        allow create: if isApproved()
+          && request.auth.uid in get(/databases/$(database)/documents/threads/$(threadId)).data.participantIds
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.body is string;
+        allow update, delete: if false;
+      }
+    }
+
+    match /assets/{assetId} {
+      allow read: if isApproved();
+      allow create: if isApproved()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.kind in ['image', 'document']
+        && request.resource.data.downloadUrl is string;
+      allow update, delete: if isApproved()
+        && (resource.data.ownerUid == request.auth.uid || isOrganizer());
+    }
+
+    match /invites/{inviteId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+  }
+}
