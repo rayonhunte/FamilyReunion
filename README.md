@@ -33,7 +33,7 @@ Private Firebase-powered member portal for planning a family reunion with approv
    npm --prefix functions install
    ```
 
-3. Copy `.env.example` to `.env.local` if you want to override the included Firebase public config or point the app to a custom function URL.
+3. Copy `.env.example` to `.env.local` and fill in your Firebase web app config and function URL.
 
 4. Start the app:
 
