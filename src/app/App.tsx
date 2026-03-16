@@ -2305,6 +2305,63 @@ function FamilyTreePage() {
 }
 
 const HelpPage = () => {
+  interface BeforeInstallPromptEvent extends Event {
+    prompt: () => Promise<void>;
+    userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+  }
+
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [showManualInstall, setShowManualInstall] = useState(false);
+
+  const isIos = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+
+  useEffect(() => {
+    const updateInstalledState = () => {
+      const inStandalone = window.matchMedia('(display-mode: standalone)').matches;
+      const iosStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+      setIsInstalled(inStandalone || iosStandalone);
+    };
+
+    const onBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setDeferredPrompt(event as BeforeInstallPromptEvent);
+    };
+
+    const onAppInstalled = () => {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+      setShowManualInstall(false);
+    };
+
+    updateInstalledState();
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    window.addEventListener('appinstalled', onAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', onAppInstalled);
+    };
+  }, []);
+
+  const onInstallClick = async () => {
+    if (isInstalled) {
+      return;
+    }
+
+    if (deferredPrompt) {
+      await deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        setShowManualInstall(false);
+      }
+      setDeferredPrompt(null);
+      return;
+    }
+
+    setShowManualInstall(true);
+  };
+
   return (
     <section className="page-section">
       <SectionIntro
@@ -2312,6 +2369,50 @@ const HelpPage = () => {
         title="How to use the portal"
         body="New to the family reunion portal? This guide walks you through each section so you can get the most out of the hub."
       />
+
+      <Card>
+        <SectionHeader title="Install on your device" meta="iPhone, Android, and desktop" />
+        <p className="helper-text">
+          Installing gives you faster access from your home screen and a more app-like experience.
+        </p>
+        <div className="stack-row" style={{ flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="cta-button"
+            disabled={isInstalled}
+            onClick={() => void onInstallClick()}
+          >
+            {isInstalled ? 'App installed' : 'Install app'}
+          </button>
+        </div>
+
+        {showManualInstall ? (
+          <div className="content-grid two-up" style={{ marginTop: '1rem' }}>
+            <Card accent="cool">
+              <SectionHeader title="Android or desktop (Chrome/Edge)" meta="Recommended" />
+              <ul className="checklist">
+                <li>Open this portal in Chrome or Edge.</li>
+                <li>Tap the browser menu and choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
+                <li>Confirm install to place it on your device home screen.</li>
+              </ul>
+            </Card>
+            <Card accent="warm">
+              <SectionHeader title="iPhone or iPad (Safari)" meta="Manual install" />
+              <ul className="checklist">
+                <li>Open this portal in Safari.</li>
+                <li>Tap the <strong>Share</strong> button.</li>
+                <li>Choose <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>.</li>
+              </ul>
+            </Card>
+          </div>
+        ) : null}
+
+        {!isInstalled && !deferredPrompt && isIos && !showManualInstall ? (
+          <p className="helper-text" style={{ marginTop: '0.75rem' }}>
+            iPhone and iPad install is manual. Tap <strong>Install app</strong> to view the steps.
+          </p>
+        ) : null}
+      </Card>
 
       <Card accent="warm">
         <SectionHeader title="Quick start for new users" meta="Step by step" />

@@ -4,6 +4,8 @@
   font-family: 'Manrope', system-ui, sans-serif;
   color: #4b3729;
   background:
+    linear-gradient(180deg, rgba(247, 234, 215, 0.8) 0%, rgba(248, 238, 225, 0.78) 54%, rgba(220, 232, 243, 0.78) 100%),
+    url('/site_bg.png') center / cover fixed no-repeat,
     radial-gradient(circle at top left, rgba(252, 229, 191, 0.65), transparent 34%),
     radial-gradient(circle at bottom right, rgba(212, 228, 247, 0.78), transparent 34%),
     linear-gradient(180deg, #f7ead7 0%, #f8eee1 54%, #dce8f3 100%);

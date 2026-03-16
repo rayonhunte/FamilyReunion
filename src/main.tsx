@@ -7,6 +7,12 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import { AuthProvider } from './hooks/useAuth';
 import './index.css';
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js');
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
