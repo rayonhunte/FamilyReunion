@@ -86,6 +86,22 @@ export interface Hotel {
   roomBlock: string;
   rateNotes: string;
   deadline?: unknown;
+  createdBy?: string;
+}
+
+export type AuditAction = 'create' | 'update' | 'delete';
+export type AuditResourceType = 'event' | 'hotel' | 'flight' | 'bulletin_post' | 'asset' | 'bulletin_comment' | 'event_rsvp' | 'registration' | 'user';
+
+export interface AuditLogEntry {
+  id: string;
+  userId: string;
+  userDisplayName: string;
+  action: AuditAction;
+  resourceType: AuditResourceType;
+  resourceId: string;
+  resourceLabel?: string;
+  details?: string;
+  createdAt?: unknown;
 }
 
 export interface Flight {

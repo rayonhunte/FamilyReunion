@@ -11,17 +11,26 @@ import {
   createHotel,
   createOrGetDirectThread,
   deleteAsset,
+  deleteBulletinPost,
+  deleteEvent,
+  deleteFlight,
+  deleteHotel,
   deleteStorageFile,
+  logAuditEvent,
   saveRegistration,
   sendThreadMessage,
   setEventRsvp,
   updateBulletinPost,
+  updateEvent,
+  updateFlight,
+  updateHotel,
   updateProfileFields,
   uploadAsset,
   uploadBulletinAttachment,
   uploadProfileImage,
   useAssociatedAssets,
   useAssets,
+  useAuditLogs,
   useBulletinComments,
   useBulletinPosts,
   useDirectory,
@@ -94,6 +103,7 @@ const navItems = [
   { label: 'Messages', to: '/app/messages' },
   { label: 'Files', to: '/app/files' },
   { label: 'Help', to: '/app/help' },
+  { label: 'Audit log', to: '/app/audit' },
   { label: 'Admin', to: '/app/admin' },
 ];
 
@@ -275,7 +285,7 @@ const PortalShell = () => {
         </div>
         <nav className="hero-nav portal-nav">
           {navItems
-            .filter((item) => (profile?.role === 'admin' ? true : item.to !== '/app/admin'))
+            .filter((item) => (profile?.role === 'admin' ? true : item.to !== '/app/admin' && item.to !== '/app/audit'))
             .map((item) => (
               <NavLink key={item.to} to={item.to} end={item.to === '/app'}>
                 {item.label}
@@ -306,6 +316,7 @@ const PortalShell = () => {
           <Route path="messages" element={<MessagesPage />} />
           <Route path="files" element={<FilesPage />} />
           <Route path="help" element={<HelpPage />} />
+          <Route path="audit" element={profile?.role === 'admin' ? <AuditPage /> : <Navigate to="/app" replace />} />
           <Route path="admin" element={profile?.role === 'admin' ? <AdminPage /> : <Navigate to="/app" replace />} />
         </Routes>
       </main>
@@ -686,7 +697,7 @@ const EventsPage = () => {
       return;
     }
 
-    await createEvent({
+    const id = await createEvent({
       ...form,
       startAt: form.startAt,
       endAt: form.endAt,
@@ -694,6 +705,9 @@ const EventsPage = () => {
       createdBy: profile.uid,
     } as Omit<EventItem, 'id'>);
 
+    if (id) {
+      await logAuditEvent(profile.uid, profile.displayName, 'create', 'event', id, form.title);
+    }
     setForm({ title: '', description: '', venue: '', startAt: '', endAt: '' });
     notify('Event published.', 'saved');
   };
@@ -775,7 +789,11 @@ const HotelsPage = () => {
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    await createHotel(form as Omit<Hotel, 'id'>);
+    if (!profile) return;
+    const id = await createHotel({ ...form, createdBy: profile.uid } as Omit<Hotel, 'id'>);
+    if (id) {
+      await logAuditEvent(profile.uid, profile.displayName, 'create', 'hotel', id, form.name);
+    }
     setForm({
       name: '',
       address: '',
@@ -885,7 +903,7 @@ const FlightsPage = () => {
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    await createFlight({
+    const id = await createFlight({
       ownerUid: profile.uid,
       ownerName: form.travelerName.trim() || profile.displayName,
       groupId: profile.groupId ?? null,
@@ -898,6 +916,9 @@ const FlightsPage = () => {
       notes: form.notes.trim() || undefined,
       confirmationCode: form.confirmationCode.trim() || undefined,
     });
+    if (id) {
+      await logAuditEvent(profile.uid, profile.displayName, 'create', 'flight', id, `${form.airline} ${form.flightNumber}`);
+    }
     notify('Flight saved.', 'saved');
     setForm({
       airline: '',
@@ -929,6 +950,7 @@ const FlightsPage = () => {
                 flight={flight}
                 ownerUid={profile.uid}
                 ownerName={profile.displayName}
+                isAdmin={profile.role === 'admin'}
               />
             ))}
           </div>
@@ -1026,41 +1048,104 @@ const FlightAssetCard = ({
   flight,
   ownerUid,
   ownerName,
+  isAdmin,
 }: {
   flight: Flight;
   ownerUid: string;
   ownerName: string;
+  isAdmin: boolean;
 }) => {
   const { data: assets } = useAssociatedAssets('flight', flight.id);
+  const { notify } = useNotification();
   const [previewAsset, setPreviewAsset] = useState<AssetRecord | null>(null);
+  const [editing, setEditing] = useState(false);
   const flightLabel = `${flight.airline} ${flight.flightNumber}`;
+  const canEdit = flight.ownerUid === ownerUid || isAdmin;
+  const [editForm, setEditForm] = useState({
+    airline: flight.airline,
+    flightNumber: flight.flightNumber,
+    departureAirport: flight.departureAirport,
+    arrivalAirport: flight.arrivalAirport,
+    departureAt: typeof flight.departureAt === 'string' && (flight.departureAt as string).length >= 16 ? (flight.departureAt as string).slice(0, 16) : '',
+    arrivalAt: flight.arrivalAt && typeof flight.arrivalAt === 'string' && (flight.arrivalAt as string).length >= 16 ? (flight.arrivalAt as string).slice(0, 16) : '',
+    notes: flight.notes ?? '',
+    confirmationCode: flight.confirmationCode ?? '',
+    seat: flight.seat ?? '',
+  });
+
+  const saveEdit = async () => {
+    await updateFlight(flight.id, {
+      ...editForm,
+      arrivalAt: editForm.arrivalAt || undefined,
+      notes: editForm.notes || undefined,
+      confirmationCode: editForm.confirmationCode || undefined,
+      seat: editForm.seat || undefined,
+    });
+    await logAuditEvent(ownerUid, ownerName, 'update', 'flight', flight.id, flightLabel);
+    setEditing(false);
+    notify('Flight updated.', 'updated');
+  };
+
+  const onDelete = async () => {
+    if (!window.confirm(`Delete "${flightLabel}"? This cannot be undone.`)) return;
+    await deleteFlight(flight.id);
+    await logAuditEvent(ownerUid, ownerName, 'delete', 'flight', flight.id, flightLabel);
+    notify('Flight removed.', 'deleted');
+  };
 
   return (
     <>
       <article className="timeline-card attachment-card">
         <div>
-          <span className="pill">{flight.ownerName}</span>
-          <h3>{flightLabel}</h3>
-          <p>
-            {flight.departureAirport} → {flight.arrivalAirport}
-          </p>
-          <p className="helper-text">
-            {formatDateTime(flight.departureAt)}
-            {flight.arrivalAt ? ` – ${formatDateTime(flight.arrivalAt)}` : ''}
-          </p>
-          {flight.notes ? <p>{flight.notes}</p> : null}
+          <div className="stack-row" style={{ flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="pill">{flight.ownerName}</span>
+            {canEdit && !editing && (
+              <span className="stack-row">
+                <button type="button" className="ghost-button" onClick={() => { setEditing(true); setEditForm({ airline: flight.airline, flightNumber: flight.flightNumber, departureAirport: flight.departureAirport, arrivalAirport: flight.arrivalAirport, departureAt: typeof flight.departureAt === 'string' && (flight.departureAt as string).length >= 16 ? (flight.departureAt as string).slice(0, 16) : '', arrivalAt: flight.arrivalAt && typeof flight.arrivalAt === 'string' && (flight.arrivalAt as string).length >= 16 ? (flight.arrivalAt as string).slice(0, 16) : '', notes: flight.notes ?? '', confirmationCode: flight.confirmationCode ?? '', seat: flight.seat ?? '' }); }}>Edit</button>
+                <button type="button" className="ghost-button danger-button" onClick={() => void onDelete()}>Delete</button>
+              </span>
+            )}
+          </div>
+          {editing ? (
+            <div className="form-grid" style={{ marginTop: '0.75rem' }}>
+              <label>Airline <input value={editForm.airline} onChange={(e) => setEditForm({ ...editForm, airline: e.target.value })} /></label>
+              <label>Flight # <input value={editForm.flightNumber} onChange={(e) => setEditForm({ ...editForm, flightNumber: e.target.value })} /></label>
+              <label>From <input value={editForm.departureAirport} onChange={(e) => setEditForm({ ...editForm, departureAirport: e.target.value })} /></label>
+              <label>To <input value={editForm.arrivalAirport} onChange={(e) => setEditForm({ ...editForm, arrivalAirport: e.target.value })} /></label>
+              <label>Departure <input type="datetime-local" value={editForm.departureAt} onChange={(e) => setEditForm({ ...editForm, departureAt: e.target.value })} /></label>
+              <label>Arrival <input type="datetime-local" value={editForm.arrivalAt} onChange={(e) => setEditForm({ ...editForm, arrivalAt: e.target.value })} /></label>
+              <label>Notes <input value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} /></label>
+              <label>Confirmation <input value={editForm.confirmationCode} onChange={(e) => setEditForm({ ...editForm, confirmationCode: e.target.value })} /></label>
+              <div className="stack-row full-span">
+                <button type="button" className="cta-button" onClick={() => void saveEdit()}>Save</button>
+                <button type="button" className="ghost-button" onClick={() => setEditing(false)}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <h3>{flightLabel}</h3>
+              <p>{flight.departureAirport} → {flight.arrivalAirport}</p>
+              <p className="helper-text">
+                {formatDateTime(flight.departureAt)}
+                {flight.arrivalAt ? ` – ${formatDateTime(flight.arrivalAt)}` : ''}
+              </p>
+              {flight.notes ? <p>{flight.notes}</p> : null}
+            </>
+          )}
         </div>
-        <AssociatedAssetSection
-          title="Flight documents & images"
-          relatedType="flight"
-          relatedId={flight.id}
-          relatedLabel={flightLabel}
-          assets={assets}
-          canManage={true}
-          ownerUid={ownerUid}
-          ownerName={ownerName}
-          onPreview={setPreviewAsset}
-        />
+        {!editing && (
+          <AssociatedAssetSection
+            title="Flight documents & images"
+            relatedType="flight"
+            relatedId={flight.id}
+            relatedLabel={flightLabel}
+            assets={assets}
+            canManage={true}
+            ownerUid={ownerUid}
+            ownerName={ownerName}
+            onPreview={setPreviewAsset}
+          />
+        )}
       </article>
       <AssetPreviewModal asset={previewAsset} onClose={() => setPreviewAsset(null)} />
     </>
@@ -1108,13 +1193,16 @@ const BulletinPage = () => {
         })
       : null;
 
-    await createBulletinPost({
+    const id = await createBulletinPost({
       authorUid: profile.uid,
       authorName: profile.displayName,
       body: newPost.trim(),
       ...(attachment ?? {}),
     });
 
+    if (id) {
+      await logAuditEvent(profile.uid, profile.displayName, 'create', 'bulletin_post', id, 'Post');
+    }
     setNewPost('');
     setBulletinImage(null);
     notify('Post published.', 'saved');
@@ -1161,10 +1249,22 @@ const BulletinPage = () => {
       ...(nextAttachment ?? {}),
     });
 
+    await logAuditEvent(profile.uid, profile.displayName, 'update', 'bulletin_post', post.id, 'Post');
     setEditingPostId(null);
     setEditingBody('');
     setEditingImage(null);
     notify('Post updated.', 'updated');
+  };
+
+  const deletePost = async (post: BulletinPost) => {
+    if (!window.confirm('Delete this post? This cannot be undone.')) return;
+    if (post.attachmentPath) {
+      await deleteStorageFile(post.attachmentPath);
+    }
+    await deleteBulletinPost(post.id);
+    await logAuditEvent(profile.uid, profile.displayName, 'delete', 'bulletin_post', post.id, 'Post');
+    setEditingPostId(null);
+    notify('Post removed.', 'deleted');
   };
 
   const removePostImage = async (post: BulletinPost) => {
@@ -1289,10 +1389,15 @@ const BulletinPage = () => {
                     <strong>{post.authorName}</strong>
                     <p>{relativeTime(post.createdAt)}</p>
                   </div>
-                  {post.authorUid === profile.uid ? (
-                    <button className="ghost-button" onClick={() => startEditing(post)} type="button">
-                      Edit
-                    </button>
+                  {(post.authorUid === profile.uid || profile.role === 'admin') ? (
+                    <span className="stack-row">
+                      <button className="ghost-button" onClick={() => startEditing(post)} type="button">
+                        Edit
+                      </button>
+                      <button className="ghost-button danger-button" onClick={() => void deletePost(post)} type="button">
+                        Delete
+                      </button>
+                    </span>
                   ) : null}
                 </div>
                 {editingPostId === post.id ? (
@@ -1509,9 +1614,17 @@ const FilesPage = () => {
     }
 
     const kind = file.type === 'application/pdf' ? 'document' : 'image';
-    await uploadAsset({ file, kind, ownerUid: profile.uid, ownerName: profile.displayName });
+    const id = await uploadAsset({ file, kind, ownerUid: profile.uid, ownerName: profile.displayName });
+    if (id) await logAuditEvent(profile.uid, profile.displayName, 'create', 'asset', id, file.name);
     notify('File uploaded.', 'saved');
     event.currentTarget.value = '';
+  };
+
+  const onDeleteAsset = async (asset: AssetRecord) => {
+    if (!window.confirm(`Delete "${asset.fileName}"? This cannot be undone.`)) return;
+    await deleteAsset(asset);
+    await logAuditEvent(profile.uid, profile.displayName, 'delete', 'asset', asset.id, asset.fileName);
+    notify('File removed.', 'deleted');
   };
 
   return (
@@ -1537,11 +1650,16 @@ const FilesPage = () => {
                     {asset.ownerName} · {asset.kind}
                   </p>
                 </div>
-                <div className="timeline-meta">
+                <div className="timeline-meta stack-row">
                   <span>{formatFileSize(asset.size)}</span>
                   <a className="ghost-link" href={asset.downloadUrl} target="_blank" rel="noreferrer">
                     Open
                   </a>
+                  {(asset.ownerUid === profile.uid || profile.role === 'admin') && (
+                    <button type="button" className="ghost-button danger-button" onClick={() => void onDeleteAsset(asset)}>
+                      Delete
+                    </button>
+                  )}
                 </div>
               </article>
             ))}
@@ -1623,6 +1741,17 @@ const EventAssetCard = ({
   const { data: rsvps } = useEventRsvps(eventItem.id);
   const { notify } = useNotification();
   const [previewAsset, setPreviewAsset] = useState<AssetRecord | null>(null);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: eventItem.title,
+    description: eventItem.description,
+    venue: eventItem.venue,
+    startAt: typeof eventItem.startAt === 'string' && eventItem.startAt.length >= 16 ? (eventItem.startAt as string).slice(0, 16) : '',
+    endAt: eventItem.endAt && typeof eventItem.endAt === 'string' && (eventItem.endAt as string).length >= 16 ? (eventItem.endAt as string).slice(0, 16) : '',
+  });
+
+  const canEdit = canManage || eventItem.createdBy === ownerUid;
+  const isEditing = editingEventId === eventItem.id;
 
   const myRsvp = rsvps.find((r) => r.userId === ownerUid);
   const attendingCount = rsvps.filter((r) => r.status === 'attending').length;
@@ -1636,14 +1765,71 @@ const EventAssetCard = ({
     );
   };
 
+  const startEdit = () => {
+    setEditingEventId(eventItem.id);
+    setEditForm({
+      title: eventItem.title,
+      description: eventItem.description,
+      venue: eventItem.venue,
+      startAt: typeof eventItem.startAt === 'string' && eventItem.startAt.length >= 16 ? (eventItem.startAt as string).slice(0, 16) : '',
+      endAt: eventItem.endAt && typeof eventItem.endAt === 'string' && (eventItem.endAt as string).length >= 16 ? (eventItem.endAt as string).slice(0, 16) : '',
+    });
+  };
+
+  const saveEdit = async () => {
+    await updateEvent(eventItem.id, {
+      title: editForm.title,
+      description: editForm.description,
+      venue: editForm.venue,
+      startAt: editForm.startAt,
+      endAt: editForm.endAt || undefined,
+    });
+    await logAuditEvent(ownerUid, ownerName, 'update', 'event', eventItem.id, eventItem.title);
+    setEditingEventId(null);
+    notify('Event updated.', 'updated');
+  };
+
+  const onDelete = async () => {
+    if (!window.confirm(`Delete "${eventItem.title}"? This cannot be undone.`)) return;
+    await deleteEvent(eventItem.id);
+    await logAuditEvent(ownerUid, ownerName, 'delete', 'event', eventItem.id, eventItem.title);
+    notify('Event removed.', 'deleted');
+  };
+
   return (
     <>
       <article className="timeline-card attachment-card">
         <div>
-          <span className="pill">{formatDate(eventItem.startAt)}</span>
-          <h3>{eventItem.title}</h3>
-          <p>{eventItem.description}</p>
+          <div className="stack-row" style={{ flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+            <span className="pill">{formatDate(eventItem.startAt)}</span>
+            {canEdit && !isEditing && (
+              <span className="stack-row">
+                <button type="button" className="ghost-button" onClick={startEdit}>Edit</button>
+                <button type="button" className="ghost-button danger-button" onClick={() => void onDelete()}>Delete</button>
+              </span>
+            )}
+          </div>
+          {isEditing ? (
+            <div className="form-grid" style={{ marginTop: '0.75rem' }}>
+              <label>Title <input value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} /></label>
+              <label>Venue <input value={editForm.venue} onChange={(e) => setEditForm({ ...editForm, venue: e.target.value })} /></label>
+              <label>Start <input type="datetime-local" value={editForm.startAt} onChange={(e) => setEditForm({ ...editForm, startAt: e.target.value })} /></label>
+              <label>End <input type="datetime-local" value={editForm.endAt} onChange={(e) => setEditForm({ ...editForm, endAt: e.target.value })} /></label>
+              <label className="full-span">Description <textarea value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} rows={3} /></label>
+              <div className="stack-row full-span">
+                <button type="button" className="cta-button" onClick={() => void saveEdit()}>Save</button>
+                <button type="button" className="ghost-button" onClick={() => setEditingEventId(null)}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <h3>{eventItem.title}</h3>
+              <p>{eventItem.description}</p>
+            </>
+          )}
         </div>
+        {!isEditing && (
+          <>
         <div className="timeline-meta">
           <strong>{eventItem.venue}</strong>
           <span>{formatDateTime(eventItem.startAt)}</span>
@@ -1684,6 +1870,8 @@ const EventAssetCard = ({
           ownerName={ownerName}
           onPreview={setPreviewAsset}
         />
+          </>
+        )}
       </article>
       <AssetPreviewModal asset={previewAsset} onClose={() => setPreviewAsset(null)} />
     </>
@@ -1702,16 +1890,76 @@ const HotelAssetCard = ({
   ownerName: string;
 }) => {
   const { data: assets } = useAssociatedAssets('hotel', hotel.id);
+  const { notify } = useNotification();
   const [previewAsset, setPreviewAsset] = useState<AssetRecord | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: hotel.name,
+    address: hotel.address,
+    bookingUrl: hotel.bookingUrl,
+    contactName: hotel.contactName,
+    contactEmail: hotel.contactEmail,
+    roomBlock: hotel.roomBlock,
+    rateNotes: hotel.rateNotes,
+    deadline: hotel.deadline ? (typeof hotel.deadline === 'string' ? (hotel.deadline as string).slice(0, 10) : '') : '',
+  });
+
+  const canEdit = canManage || hotel.createdBy === ownerUid;
+
+  const saveEdit = async () => {
+    await updateHotel(hotel.id, {
+      ...editForm,
+      deadline: editForm.deadline || undefined,
+    });
+    await logAuditEvent(ownerUid, ownerName, 'update', 'hotel', hotel.id, hotel.name);
+    setEditing(false);
+    notify('Hotel updated.', 'updated');
+  };
+
+  const onDelete = async () => {
+    if (!window.confirm(`Delete "${hotel.name}"? This cannot be undone.`)) return;
+    await deleteHotel(hotel.id);
+    await logAuditEvent(ownerUid, ownerName, 'delete', 'hotel', hotel.id, hotel.name);
+    notify('Hotel removed.', 'deleted');
+  };
 
   return (
     <>
       <article className="hotel-card attachment-card">
         <div>
-          <h3>{hotel.name}</h3>
-          <p>{hotel.address}</p>
-          <p>{hotel.rateNotes}</p>
+          <div className="stack-row" style={{ flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem' }}>
+            <h3>{hotel.name}</h3>
+            {canEdit && !editing && (
+              <span className="stack-row">
+                <button type="button" className="ghost-button" onClick={() => { setEditing(true); setEditForm({ name: hotel.name, address: hotel.address, bookingUrl: hotel.bookingUrl, contactName: hotel.contactName, contactEmail: hotel.contactEmail, roomBlock: hotel.roomBlock, rateNotes: hotel.rateNotes, deadline: hotel.deadline ? (typeof hotel.deadline === 'string' ? (hotel.deadline as string).slice(0, 10) : '') : '' }); }}>Edit</button>
+                <button type="button" className="ghost-button danger-button" onClick={() => void onDelete()}>Delete</button>
+              </span>
+            )}
+          </div>
+          {editing ? (
+            <div className="form-grid" style={{ marginTop: '0.75rem' }}>
+              <label>Name <input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} /></label>
+              <label>Booking URL <input type="url" value={editForm.bookingUrl} onChange={(e) => setEditForm({ ...editForm, bookingUrl: e.target.value })} /></label>
+              <label className="full-span">Address <input value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} /></label>
+              <label>Contact <input value={editForm.contactName} onChange={(e) => setEditForm({ ...editForm, contactName: e.target.value })} /></label>
+              <label>Email <input type="email" value={editForm.contactEmail} onChange={(e) => setEditForm({ ...editForm, contactEmail: e.target.value })} /></label>
+              <label>Room block <input value={editForm.roomBlock} onChange={(e) => setEditForm({ ...editForm, roomBlock: e.target.value })} /></label>
+              <label>Deadline <input type="date" value={editForm.deadline} onChange={(e) => setEditForm({ ...editForm, deadline: e.target.value })} /></label>
+              <label className="full-span">Rate notes <textarea value={editForm.rateNotes} onChange={(e) => setEditForm({ ...editForm, rateNotes: e.target.value })} rows={3} /></label>
+              <div className="stack-row full-span">
+                <button type="button" className="cta-button" onClick={() => void saveEdit()}>Save</button>
+                <button type="button" className="ghost-button" onClick={() => setEditing(false)}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p>{hotel.address}</p>
+              <p>{hotel.rateNotes}</p>
+            </>
+          )}
         </div>
+        {!editing && (
+          <>
         <div className="timeline-meta">
           <span>{hotel.roomBlock}</span>
           <span>Deadline: {formatDate(hotel.deadline)}</span>
@@ -1730,6 +1978,8 @@ const HotelAssetCard = ({
           ownerName={ownerName}
           onPreview={setPreviewAsset}
         />
+          </>
+        )}
       </article>
       <AssetPreviewModal asset={previewAsset} onClose={() => setPreviewAsset(null)} />
     </>
@@ -1774,7 +2024,7 @@ const AssociatedAssetSection = ({
     }
 
     const kind = file.type === 'application/pdf' ? 'document' : 'image';
-    await uploadAsset({
+    const id = await uploadAsset({
       file,
       kind,
       ownerUid,
@@ -1784,6 +2034,7 @@ const AssociatedAssetSection = ({
       relatedId,
       relatedLabel,
     });
+    if (id) await logAuditEvent(ownerUid, ownerName, 'create', 'asset', id, file.name);
     setDescription('');
     notify('Attachment uploaded.', 'saved');
     event.currentTarget.value = '';
@@ -1791,6 +2042,7 @@ const AssociatedAssetSection = ({
 
   const onDelete = async (asset: AssetRecord) => {
     await deleteAsset(asset);
+    await logAuditEvent(ownerUid, ownerName, 'delete', 'asset', asset.id, asset.fileName);
     notify('File removed.', 'deleted');
   };
 
@@ -1885,6 +2137,38 @@ const AssetPreviewModal = ({
         </div>
       </div>
     </div>
+  );
+};
+
+const AuditPage = () => {
+  const { data: logs } = useAuditLogs();
+
+  return (
+    <section className="page-section">
+      <SectionIntro
+        eyebrow="Audit log"
+        title="Activity history"
+        body="All create, update, and delete actions are logged. Visible to admins only."
+      />
+      <Card>
+        <SectionHeader title="Recent activity" meta={`${logs.length} entries`} />
+        <div className="list-stack">
+          {logs.map((entry) => (
+            <article className="list-item" key={entry.id}>
+              <div>
+                <strong>{entry.userDisplayName}</strong>
+                <p>
+                  {entry.action} {entry.resourceType.replace('_', ' ')}
+                  {entry.resourceLabel ? `: ${entry.resourceLabel}` : ''}
+                  {entry.details ? ` — ${entry.details}` : ''}
+                </p>
+              </div>
+              <span className="helper-text">{formatDateTime(entry.createdAt)}</span>
+            </article>
+          ))}
+        </div>
+      </Card>
+    </section>
   );
 };
 

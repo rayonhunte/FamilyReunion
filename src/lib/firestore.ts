@@ -4,6 +4,7 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -18,6 +19,7 @@ import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage
 import { startTransition, useEffect, useMemo, useState } from 'react';
 import {
   demoAssets,
+  demoAuditLogs,
   demoComments,
   demoEventRsvps,
   demoEvents,
@@ -34,6 +36,9 @@ import type {
   AssetKind,
   AssetRecord,
   AssetRelatedType,
+  AuditAction,
+  AuditLogEntry,
+  AuditResourceType,
   BulletinComment,
   BulletinPost,
   DirectoryMember,
@@ -316,15 +321,35 @@ export const saveRegistration = async (uid: string, payload: Registration) => {
   );
 };
 
-export const createEvent = async (payload: Omit<EventItem, 'id'>) => {
+export const createEvent = async (payload: Omit<EventItem, 'id'>): Promise<string | void> => {
   if (!db) {
     return;
   }
 
-  await addDoc(collection(db!, 'events'), {
+  const ref = await addDoc(collection(db!, 'events'), {
     ...payload,
     createdAt: serverTimestamp(),
   });
+  return ref.id;
+};
+
+export const updateEvent = async (eventId: string, payload: Partial<Omit<EventItem, 'id' | 'createdBy'>>) => {
+  if (!db) {
+    return;
+  }
+
+  await updateDoc(doc(db!, 'events', eventId), {
+    ...payload,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const deleteEvent = async (eventId: string) => {
+  if (!db) {
+    return;
+  }
+
+  await deleteDoc(doc(db!, 'events', eventId));
 };
 
 export const useEventRsvps = (eventId: string) => {
@@ -374,23 +399,55 @@ export const setEventRsvp = async (
   );
 };
 
-export const createHotel = async (payload: Omit<Hotel, 'id'>) => {
+export const createHotel = async (payload: Omit<Hotel, 'id'>): Promise<string | void> => {
   if (!db) {
     return;
   }
 
-  await addDoc(collection(db!, 'hotels'), {
+  const ref = await addDoc(collection(db!, 'hotels'), {
     ...payload,
     createdAt: serverTimestamp(),
   });
+  return ref.id;
 };
 
-export const createFlight = async (payload: Omit<Flight, 'id'>) => {
+export const updateHotel = async (hotelId: string, payload: Partial<Omit<Hotel, 'id'>>) => {
   if (!db) {
     return;
   }
 
-  await addDoc(collection(db!, 'flights'), {
+  await updateDoc(doc(db!, 'hotels', hotelId), {
+    ...payload,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const deleteHotel = async (hotelId: string) => {
+  if (!db) {
+    return;
+  }
+
+  await deleteDoc(doc(db!, 'hotels', hotelId));
+};
+
+export const createFlight = async (payload: Omit<Flight, 'id'>): Promise<string | void> => {
+  if (!db) {
+    return;
+  }
+
+  const ref = await addDoc(collection(db!, 'flights'), {
+    ...payload,
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+};
+
+export const updateFlight = async (flightId: string, payload: Partial<Omit<Flight, 'id' | 'ownerUid' | 'ownerName'>>) => {
+  if (!db) {
+    return;
+  }
+
+  await updateDoc(doc(db!, 'flights', flightId), {
     ...payload,
     updatedAt: serverTimestamp(),
   });
@@ -404,16 +461,17 @@ export const deleteFlight = async (flightId: string) => {
   await deleteDoc(doc(db!, 'flights', flightId));
 };
 
-export const createBulletinPost = async (payload: Omit<BulletinPost, 'id' | 'createdAt' | 'updatedAt'>) => {
+export const createBulletinPost = async (payload: Omit<BulletinPost, 'id' | 'createdAt' | 'updatedAt'>): Promise<string | void> => {
   if (!db) {
     return;
   }
 
-  await addDoc(collection(db!, 'bulletinPosts'), {
+  const ref = await addDoc(collection(db!, 'bulletinPosts'), {
     ...payload,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  return ref.id;
 };
 
 export const updateBulletinPost = async (
@@ -429,6 +487,59 @@ export const updateBulletinPost = async (
     editedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+};
+
+export const deleteBulletinPost = async (postId: string) => {
+  if (!db) {
+    return;
+  }
+
+  await deleteDoc(doc(db!, 'bulletinPosts', postId));
+};
+
+export const logAuditEvent = async (
+  userId: string,
+  userDisplayName: string,
+  action: AuditAction,
+  resourceType: AuditResourceType,
+  resourceId: string,
+  resourceLabel?: string,
+  details?: string,
+) => {
+  if (!db) {
+    return;
+  }
+
+  await addDoc(collection(db!, 'auditLogs'), {
+    userId,
+    userDisplayName,
+    action,
+    resourceType,
+    resourceId,
+    resourceLabel: resourceLabel ?? null,
+    details: details ?? null,
+    createdAt: serverTimestamp(),
+  });
+};
+
+const subscribeAuditLogs = (setData: (value: AuditLogEntry[]) => void) => {
+  if (!db) return () => undefined;
+  const q = query(
+    collection(db, 'auditLogs'),
+    orderBy('createdAt', 'desc'),
+    limit(500),
+  );
+  return onSnapshot(q, (snapshot) => setData(mapDocs<AuditLogEntry>(snapshot)));
+};
+
+export const useAuditLogs = () => {
+  return useDemoOrLive<AuditLogEntry[]>(
+    demoAuditLogs,
+    useMemo(
+      () => (db ? (setData: (value: AuditLogEntry[]) => void) => subscribeAuditLogs(setData) : undefined),
+      [],
+    ),
+  );
 };
 
 export const addBulletinComment = async (payload: Omit<BulletinComment, 'id' | 'createdAt'>) => {
@@ -538,7 +649,7 @@ export const uploadAsset = async ({
   await uploadBytes(storageRef, file, { contentType: file.type });
   const downloadUrl = await getDownloadURL(storageRef);
 
-  await addDoc(collection(db!, 'assets'), {
+  const docRef = await addDoc(collection(db!, 'assets'), {
     ownerUid,
     ownerName,
     fileName: file.name,
@@ -554,6 +665,7 @@ export const uploadAsset = async ({
     relatedKey,
     createdAt: serverTimestamp(),
   });
+  return docRef.id;
 };
 
 export const deleteAsset = async (asset: AssetRecord) => {

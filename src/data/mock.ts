@@ -1,5 +1,6 @@
 import type {
   AssetRecord,
+  AuditLogEntry,
   BulletinComment,
   BulletinPost,
   DirectoryMember,
@@ -300,4 +301,10 @@ export const demoPendingApprovals: UserProfile[] = [
     role: 'member',
     groupId: null,
   },
+];
+
+export const demoAuditLogs: AuditLogEntry[] = [
+  { id: 'log-1', userId: 'demo-admin', userDisplayName: 'Reunion Admin', action: 'create', resourceType: 'event', resourceId: 'welcome-dinner', resourceLabel: 'Welcome Dinner', createdAt: '2026-03-01T10:00:00.000Z' },
+  { id: 'log-2', userId: 'maya-james', userDisplayName: 'Maya James', action: 'create', resourceType: 'bulletin_post', resourceId: 'post-1', resourceLabel: 'Post', createdAt: '2026-03-01T18:00:00.000Z' },
+  { id: 'log-3', userId: 'demo-admin', userDisplayName: 'Reunion Admin', action: 'create', resourceType: 'flight', resourceId: 'flight-1', resourceLabel: 'Caribbean Airlines BW 500', createdAt: '2026-03-10T12:00:00.000Z' },
 ];
