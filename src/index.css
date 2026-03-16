@@ -1096,3 +1096,233 @@ p {
     padding: 0.85rem 0.95rem;
   }
 }
+
+/* Family tree */
+/* Family tree full-screen modal */
+.family-tree-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(38, 28, 21, 0.6);
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.family-tree-modal {
+  width: 100%;
+  max-width: calc(100vw - 2rem);
+  height: calc(100vh - 2rem);
+  max-height: calc(100vh - 2rem);
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--paper-strong);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.family-tree-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.family-tree-modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.family-tree-modal-chart {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.family-tree-modal-chart .family-tree-react-flow {
+  width: 100%;
+  height: 100%;
+}
+
+.family-tree-graph-wrap {
+  margin-top: 1.5rem;
+  width: 100%;
+}
+
+.family-tree-graph {
+  background: var(--paper-strong);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 1rem;
+  overflow: hidden;
+  min-height: 400px;
+}
+
+/* React Flow family tree overrides */
+.family-tree-react-flow {
+  --rf-background: var(--paper-strong);
+}
+.family-tree-react-flow .react-flow__node {
+  font-family: var(--font-fraunces, 'Fraunces', Georgia, serif);
+}
+.family-tree-react-flow .react-flow__edge-path {
+  stroke: var(--muted);
+  stroke-width: 2;
+}
+.family-tree-react-flow .react-flow__controls {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+.family-tree-react-flow .react-flow__minimap {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.family-tree-edge-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--paper);
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+/* Custom family member node: avatar + name */
+.family-tree-flow-node {
+  padding: 0;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: var(--paper);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.family-tree-flow-node-center {
+  border-color: var(--accent-strong);
+  background: var(--mint);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+.family-tree-flow-node-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.75rem 0.5rem;
+  min-width: 80px;
+}
+.family-tree-flow-node-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--paper-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.family-tree-flow-node-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.family-tree-flow-node-initials {
+  font-family: var(--font-fraunces, 'Fraunces', Georgia, serif);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.family-tree-flow-node-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+  text-align: center;
+  line-height: 1.2;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.family-tree-flow-node-center .family-tree-flow-node-avatar {
+  width: 48px;
+  height: 48px;
+}
+.family-tree-flow-node-center .family-tree-flow-node-initials {
+  font-size: 16px;
+}
+.family-tree-flow-node-center .family-tree-flow-node-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.family-tree-vine {
+  stroke: var(--muted);
+  stroke-width: 2;
+  fill: none;
+  opacity: 0.85;
+}
+
+.family-tree-node-circle {
+  fill: var(--paper);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.family-tree-node-center .family-tree-node-circle {
+  fill: var(--mint);
+  stroke: var(--accent-strong);
+  stroke-width: 2.5;
+}
+
+.family-tree-node-label {
+  font-family: var(--font-fraunces, 'Fraunces', Georgia, serif);
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--ink);
+  pointer-events: none;
+}
+
+.family-tree-node-center .family-tree-node-label {
+  font-size: 14px;
+}
+
+/* Relationship combobox */
+.relationship-combobox {
+  position: relative;
+}
+
+.relationship-combobox input {
+  width: 100%;
+}
+
+.relationship-combobox-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--paper-strong);
+  box-shadow: var(--shadow);
+}
+
+.relationship-combobox-option {
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+}
+
+.relationship-combobox-option:hover,
+.relationship-combobox-option.highlighted {
+  background: var(--mint);
+}

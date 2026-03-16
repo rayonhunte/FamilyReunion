@@ -6,6 +6,7 @@ import type {
   DirectoryMember,
   EventItem,
   EventRsvp,
+  FamilyRelationship,
   Flight,
   Hotel,
   Registration,
@@ -52,6 +53,12 @@ export const demoMembers: DirectoryMember[] = [
     role: 'member',
     groupId: 'bacchus',
   },
+];
+
+export const demoFamilyRelationships: FamilyRelationship[] = [
+  { id: 'rel-1', fromUid: 'demo-admin', toUid: 'maya-james', relationshipType: 'parent', createdBy: 'demo-admin', createdAt: null },
+  { id: 'rel-2', fromUid: 'demo-admin', toUid: 'rohan-bacchus', relationshipType: 'parent', createdBy: 'demo-admin', createdAt: null },
+  { id: 'rel-3', fromUid: 'maya-james', toUid: 'rohan-bacchus', relationshipType: 'sibling', createdBy: 'maya-james', createdAt: null },
 ];
 
 export const demoRegistration: Registration = {

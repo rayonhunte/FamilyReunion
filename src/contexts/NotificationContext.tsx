@@ -1,37 +1,22 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from 'react';
-
-export type NotificationVariant = 'saved' | 'updated' | 'deleted' | 'error';
-
-type NotificationState = {
-  message: string;
-  variant: NotificationVariant;
-} | null;
-
-type NotificationContextValue = {
-  notify: (message: string, variant?: NotificationVariant) => void;
-  notification: NotificationState;
-  clearNotification: () => void;
-};
-
-const NotificationContext = createContext<NotificationContextValue | null>(null);
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { NotificationContext } from './notification-context';
 
 const AUTO_DISMISS_MS = 3200;
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
-  const [notification, setNotification] = useState<NotificationState>(null);
+  const [notification, setNotification] = useState<{
+    message: string;
+    variant: 'saved' | 'updated' | 'deleted' | 'error';
+  } | null>(null);
 
   const clearNotification = useCallback(() => setNotification(null), []);
 
-  const notify = useCallback((message: string, variant: NotificationVariant = 'saved') => {
-    setNotification({ message, variant });
-  }, []);
+  const notify = useCallback(
+    (message: string, variant: 'saved' | 'updated' | 'deleted' | 'error' = 'saved') => {
+      setNotification({ message, variant });
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!notification) return;
@@ -80,10 +65,4 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       ) : null}
     </NotificationContext.Provider>
   );
-}
-
-export function useNotification() {
-  const ctx = useContext(NotificationContext);
-  if (!ctx) throw new Error('useNotification must be used within NotificationProvider.');
-  return ctx;
 }

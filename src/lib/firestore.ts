@@ -23,6 +23,7 @@ import {
   demoComments,
   demoEventRsvps,
   demoEvents,
+  demoFamilyRelationships,
   demoFlights,
   demoHotels,
   demoMembers,
@@ -44,9 +45,11 @@ import type {
   DirectoryMember,
   EventItem,
   EventRsvp,
+  FamilyRelationship,
   Flight,
   Hotel,
   Registration,
+  RelationshipType,
   RSVPStatus,
   Thread,
   ThreadMessage,
@@ -203,6 +206,19 @@ export const useDirectory = () =>
         db
           ? (setData: (value: DirectoryMember[]) => void) =>
               subscribeCollection<DirectoryMember>('directory', [orderBy('displayName', 'asc')], setData)
+          : undefined,
+      [],
+    ),
+  );
+
+export const useFamilyRelationships = () =>
+  useDemoOrLive<FamilyRelationship[]>(
+    demoFamilyRelationships,
+    useMemo(
+      () =>
+        db
+          ? (setData: (value: FamilyRelationship[]) => void) =>
+              subscribeCollection<FamilyRelationship>('familyRelationships', [orderBy('createdAt', 'desc')], setData)
           : undefined,
       [],
     ),
@@ -675,6 +691,41 @@ export const deleteAsset = async (asset: AssetRecord) => {
 
   await deleteDoc(doc(db!, 'assets', asset.id));
   await deleteObject(ref(storage, asset.path));
+};
+
+export const createRelationship = async (payload: {
+  fromUid: string;
+  toUid: string;
+  relationshipType: RelationshipType;
+  createdBy: string;
+}) => {
+  if (!db) return;
+  const { fromUid, toUid, relationshipType, createdBy } = payload;
+  if (fromUid === toUid) return;
+  const docRef = await addDoc(collection(db, 'familyRelationships'), {
+    fromUid,
+    toUid,
+    relationshipType,
+    createdBy,
+    createdAt: serverTimestamp(),
+  });
+  return docRef.id;
+};
+
+export const updateRelationship = async (
+  relationshipId: string,
+  payload: { relationshipType: RelationshipType },
+) => {
+  if (!db) return;
+  await updateDoc(doc(db, 'familyRelationships', relationshipId), {
+    ...payload,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const deleteRelationship = async (relationshipId: string) => {
+  if (!db) return;
+  await deleteDoc(doc(db, 'familyRelationships', relationshipId));
 };
 
 export const uploadBulletinAttachment = async ({

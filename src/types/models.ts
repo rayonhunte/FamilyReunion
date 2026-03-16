@@ -3,6 +3,30 @@ export type Role = 'member' | 'organizer' | 'admin';
 export type RSVPStatus = 'attending' | 'maybe' | 'not-attending';
 export type AssetKind = 'image' | 'document';
 export type AssetRelatedType = 'general' | 'event' | 'hotel' | 'flight';
+export type RelationshipType =
+  | 'parent'
+  | 'child'
+  | 'spouse'
+  | 'wife'
+  | 'husband'
+  | 'partner'
+  | 'sibling'
+  | 'cousin'
+  | 'grandparent'
+  | 'grandchild'
+  | 'aunt'
+  | 'uncle'
+  | 'niece'
+  | 'nephew';
+
+export interface FamilyRelationship {
+  id: string;
+  fromUid: string;
+  toUid: string;
+  relationshipType: RelationshipType;
+  createdBy: string;
+  createdAt?: unknown;
+}
 
 export interface UserProfile {
   id: string;
@@ -90,7 +114,7 @@ export interface Hotel {
 }
 
 export type AuditAction = 'create' | 'update' | 'delete';
-export type AuditResourceType = 'event' | 'hotel' | 'flight' | 'bulletin_post' | 'asset' | 'bulletin_comment' | 'event_rsvp' | 'registration' | 'user';
+export type AuditResourceType = 'event' | 'hotel' | 'flight' | 'bulletin_post' | 'asset' | 'bulletin_comment' | 'event_rsvp' | 'registration' | 'user' | 'family_relationship';
 
 export interface AuditLogEntry {
   id: string;

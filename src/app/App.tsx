@@ -1,6 +1,8 @@
-import { useDeferredValue, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { useNotification } from '../contexts/NotificationContext';
+import { ReactFlow, ReactFlowProvider, Controls, MiniMap, Handle, BaseEdge, EdgeLabelRenderer, getBezierPath, applyNodeChanges, applyEdgeChanges, Position, type Node as FlowNode, type Edge as FlowEdge, type NodeProps, type EdgeProps } from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import { useNotification } from '../contexts/useNotification';
 import { useAuth } from '../hooks/useAuth';
 import { callBackend } from '../lib/functionsApi';
 import {
@@ -10,11 +12,13 @@ import {
   createFlight,
   createHotel,
   createOrGetDirectThread,
+  createRelationship,
   deleteAsset,
   deleteBulletinPost,
   deleteEvent,
   deleteFlight,
   deleteHotel,
+  deleteRelationship,
   deleteStorageFile,
   logAuditEvent,
   saveRegistration,
@@ -25,6 +29,7 @@ import {
   updateFlight,
   updateHotel,
   updateProfileFields,
+  updateRelationship,
   uploadAsset,
   uploadBulletinAttachment,
   uploadProfileImage,
@@ -36,6 +41,7 @@ import {
   useDirectory,
   useEventRsvps,
   useEvents,
+  useFamilyRelationships,
   useFlights,
   useHotels,
   usePendingApprovals,
@@ -49,9 +55,11 @@ import type {
   BulletinPost,
   DirectoryMember,
   EventItem,
+  FamilyRelationship,
   Flight,
   Hotel,
   Registration,
+  RelationshipType,
   Role,
   RSVPStatus,
 } from '../types/models';
@@ -102,6 +110,7 @@ const navItems = [
   { label: 'Bulletin', to: '/app/bulletin' },
   { label: 'Messages', to: '/app/messages' },
   { label: 'Files', to: '/app/files' },
+  { label: 'Family tree', to: '/app/family-tree' },
   { label: 'Help', to: '/app/help' },
   { label: 'Audit log', to: '/app/audit' },
   { label: 'Admin', to: '/app/admin' },
@@ -114,9 +123,11 @@ export const App = () => {
     return <FullscreenState title="Loading portal" description="Checking your member access and reunion profile." />;
   }
 
+  const canAccessApp = Boolean(user && profile?.status === 'approved');
+
   return (
     <Routes>
-      <Route path="/" element={user && profile?.status === 'approved' ? <Navigate to="/app" replace /> : <LandingPage />} />
+      <Route path="/" element={canAccessApp ? <Navigate to="/app" replace /> : <LandingPage />} />
       <Route
         path="/pending"
         element={!user ? <Navigate to="/" replace /> : profile?.status === 'approved' ? <Navigate to="/app" replace /> : <PendingPage />}
@@ -315,6 +326,7 @@ const PortalShell = () => {
           <Route path="bulletin" element={<BulletinPage />} />
           <Route path="messages" element={<MessagesPage />} />
           <Route path="files" element={<FilesPage />} />
+          <Route path="family-tree" element={<FamilyTreePage />} />
           <Route path="help" element={<HelpPage />} />
           <Route path="audit" element={profile?.role === 'admin' ? <AuditPage /> : <Navigate to="/app" replace />} />
           <Route path="admin" element={profile?.role === 'admin' ? <AdminPage /> : <Navigate to="/app" replace />} />
@@ -950,7 +962,7 @@ const FlightsPage = () => {
                 flight={flight}
                 ownerUid={profile.uid}
                 ownerName={profile.displayName}
-                isAdmin={profile.role === 'admin'}
+                canManage={profile?.role === 'admin' || profile?.role === 'organizer'}
               />
             ))}
           </div>
@@ -1048,19 +1060,19 @@ const FlightAssetCard = ({
   flight,
   ownerUid,
   ownerName,
-  isAdmin,
+  canManage,
 }: {
   flight: Flight;
   ownerUid: string;
   ownerName: string;
-  isAdmin: boolean;
+  canManage: boolean;
 }) => {
   const { data: assets } = useAssociatedAssets('flight', flight.id);
   const { notify } = useNotification();
   const [previewAsset, setPreviewAsset] = useState<AssetRecord | null>(null);
   const [editing, setEditing] = useState(false);
   const flightLabel = `${flight.airline} ${flight.flightNumber}`;
-  const canEdit = flight.ownerUid === ownerUid || isAdmin;
+  const canEdit = canManage;
   const [editForm, setEditForm] = useState({
     airline: flight.airline,
     flightNumber: flight.flightNumber,
@@ -1655,7 +1667,7 @@ const FilesPage = () => {
                   <a className="ghost-link" href={asset.downloadUrl} target="_blank" rel="noreferrer">
                     Open
                   </a>
-                  {(asset.ownerUid === profile.uid || profile.role === 'admin') && (
+                  {(profile?.role === 'admin' || profile?.role === 'organizer') && (
                     <button type="button" className="ghost-button danger-button" onClick={() => void onDeleteAsset(asset)}>
                       Delete
                     </button>
@@ -1669,6 +1681,640 @@ const FilesPage = () => {
     </section>
   );
 };
+
+const RELATIONSHIP_TYPES: { value: RelationshipType; label: string }[] = [
+  { value: 'parent', label: 'Parent' },
+  { value: 'child', label: 'Child' },
+  { value: 'spouse', label: 'Spouse' },
+  { value: 'wife', label: 'Wife' },
+  { value: 'husband', label: 'Husband' },
+  { value: 'partner', label: 'Partner' },
+  { value: 'sibling', label: 'Sibling' },
+  { value: 'cousin', label: 'Cousin' },
+  { value: 'grandparent', label: 'Grandparent' },
+  { value: 'grandchild', label: 'Grandchild' },
+  { value: 'aunt', label: 'Aunt' },
+  { value: 'uncle', label: 'Uncle' },
+  { value: 'niece', label: 'Niece' },
+  { value: 'nephew', label: 'Nephew' },
+];
+
+function RelationshipCombobox({
+  value,
+  onChange,
+  ariaLabel,
+  placeholder = 'Type to search...',
+}: {
+  value: RelationshipType;
+  onChange: (v: RelationshipType) => void;
+  ariaLabel: string;
+  placeholder?: string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [filterText, setFilterText] = useState('');
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+
+  const selectedOption = RELATIONSHIP_TYPES.find((o) => o.value === value);
+  const filteredOptions = useMemo(() => {
+    const q = filterText.trim().toLowerCase();
+    if (!q) return RELATIONSHIP_TYPES;
+    return RELATIONSHIP_TYPES.filter((o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q));
+  }, [filterText]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  const displayValue = open ? filterText : (selectedOption?.label ?? value);
+
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (!open) {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        setOpen(true);
+        setFilterText('');
+        setHighlightedIndex(0);
+      }
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+      setFilterText('');
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const opt = filteredOptions[highlightedIndex];
+      if (opt) {
+        onChange(opt.value);
+        setOpen(false);
+        setFilterText('');
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedIndex((i) => (i < filteredOptions.length - 1 ? i + 1 : 0));
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex((i) => (i > 0 ? i - 1 : filteredOptions.length - 1));
+      return;
+    }
+  };
+
+  return (
+    <div className="relationship-combobox" ref={containerRef}>
+      <input
+        type="text"
+        role="combobox"
+        aria-expanded={open ? 'true' : 'false'}
+        aria-autocomplete="list"
+        aria-controls="relationship-listbox"
+        aria-activedescendant={open && filteredOptions[highlightedIndex] ? `rel-option-${filteredOptions[highlightedIndex].value}` : undefined}
+        aria-label={ariaLabel}
+        value={displayValue}
+        onChange={(e) => {
+          setFilterText(e.target.value);
+          setOpen(true);
+          setHighlightedIndex(0);
+        }}
+        onFocus={() => {
+          setOpen(true);
+          setHighlightedIndex(0);
+        }}
+        onKeyDown={onKeyDown}
+        placeholder={placeholder}
+      />
+      {open && (
+        <ul id="relationship-listbox" role="listbox" className="relationship-combobox-list">
+          {filteredOptions.map((opt, i) => (
+            <li
+              key={opt.value}
+              id={`rel-option-${opt.value}`}
+              role="option"
+              aria-selected={opt.value === value ? 'true' : 'false'}
+              className={`relationship-combobox-option ${i === highlightedIndex ? 'highlighted' : ''}`}
+              onMouseEnter={() => setHighlightedIndex(i)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onChange(opt.value);
+                setOpen(false);
+                setFilterText('');
+              }}
+            >
+              {opt.label}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Single initial (first letter of first name), e.g. "Pamela Medas" → "P". Matches profile/center style. */
+function getSingleInitial(displayName: string): string {
+  const s = (displayName || '').trim();
+  if (!s) return '?';
+  const firstWord = s.split(/\s+/)[0] ?? s;
+  return (firstWord[0] ?? '?').toUpperCase();
+}
+
+type FamilyTreeNodeData = {
+  label: string;
+  initials: string;
+  photoURL?: string | null;
+  isCenter?: boolean;
+};
+
+function FamilyTreeNode({ data }: NodeProps<FlowNode<FamilyTreeNodeData>>) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const photoUrl = data?.photoURL;
+  const name = data?.label ?? '';
+  const initials = data?.initials ?? '?';
+  const isCenter = data?.isCenter ?? false;
+  const showPhoto = Boolean(photoUrl && typeof photoUrl === 'string' && photoUrl.trim() && !imgFailed);
+  return (
+    <div className={`family-tree-flow-node ${isCenter ? 'family-tree-flow-node-center' : ''}`}>
+      <Handle type="target" position={Position.Top} />
+      <div className="family-tree-flow-node-body">
+        <div className="family-tree-flow-node-avatar">
+          {showPhoto ? (
+            <img
+              src={photoUrl!}
+              alt=""
+              aria-hidden
+              onError={() => setImgFailed(true)}
+            />
+          ) : (
+            <span className="family-tree-flow-node-initials">{initials}</span>
+          )}
+        </div>
+        <span className="family-tree-flow-node-name">{name}</span>
+      </div>
+      <Handle type="source" position={Position.Bottom} />
+    </div>
+  );
+}
+
+const familyTreeNodeTypes = { familyMember: FamilyTreeNode };
+
+function FamilyTreeEdge({ id, sourceX, sourceY, targetX, targetY, data }: EdgeProps<FlowEdge>) {
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+  });
+  const label = (data?.label as string) ?? '';
+  return (
+    <>
+      <BaseEdge id={id} path={edgePath} />
+      <EdgeLabelRenderer>
+        <div
+          style={{
+            position: 'absolute',
+            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+            pointerEvents: 'all',
+          }}
+          className="family-tree-edge-label nodrag nopan"
+        >
+          {label}
+        </div>
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+
+const familyTreeEdgeTypes = { familyRelationship: FamilyTreeEdge };
+
+function FamilyTreePage() {
+  const { profile } = useAuth();
+  const { notify } = useNotification();
+  const { data: directory } = useDirectory();
+  const { data: relationships } = useFamilyRelationships();
+  const [viewMode, setViewMode] = useState<'my' | 'full'>('my');
+  const [treeModalOpen, setTreeModalOpen] = useState(false);
+  useEffect(() => {
+    if (!treeModalOpen) return;
+    const onKey = (e: Event) => {
+      if ((e as unknown as { key: string }).key === 'Escape') setTreeModalOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [treeModalOpen]);
+  const [addForm, setAddForm] = useState<{ toUid: string; relationshipType: RelationshipType }>({ toUid: '', relationshipType: 'parent' });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingType, setEditingType] = useState<RelationshipType | null>(null);
+
+  const otherMembers = useMemo(
+    () => directory.filter((m) => m.uid !== profile?.uid),
+    [directory, profile?.uid],
+  );
+  const myRelationshipIds = useMemo(
+    () =>
+      new Set(
+        relationships.flatMap((r) =>
+          r.fromUid === profile?.uid || r.toUid === profile?.uid ? [r.id] : [],
+        ),
+      ),
+    [relationships, profile?.uid],
+  );
+  const myRelationships = useMemo(
+    () => relationships.filter((r) => myRelationshipIds.has(r.id)),
+    [relationships, myRelationshipIds],
+  );
+  const canEditRel = (r: FamilyRelationship) =>
+    r.createdBy === profile?.uid || profile?.role === 'admin';
+
+  const onSubmitAdd = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!profile || !addForm.toUid) return;
+    const id = await createRelationship({
+      fromUid: profile.uid,
+      toUid: addForm.toUid,
+      relationshipType: addForm.relationshipType,
+      createdBy: profile.uid,
+    });
+    if (id) {
+      await logAuditEvent(profile.uid, profile.displayName, 'create', 'family_relationship', id, addForm.relationshipType);
+      notify('Relationship added.', 'saved');
+      setAddForm({ toUid: '', relationshipType: 'parent' });
+    }
+  };
+
+  const onSaveEdit = async () => {
+    if (!profile || !editingId || editingType === null) return;
+    await updateRelationship(editingId, { relationshipType: editingType });
+    await logAuditEvent(profile.uid, profile.displayName, 'update', 'family_relationship', editingId, editingType);
+    notify('Relationship updated.', 'saved');
+    setEditingId(null);
+    setEditingType(null);
+  };
+
+  const onDeleteRel = async (r: FamilyRelationship) => {
+    if (!profile || !window.confirm('Remove this relationship?')) return;
+    await deleteRelationship(r.id);
+    await logAuditEvent(profile.uid, profile.displayName, 'delete', 'family_relationship', r.id, r.relationshipType);
+    notify('Relationship removed.', 'deleted');
+  };
+
+  const memberByUid = (uid: string) => directory.find((m) => m.uid === uid);
+  const labelForRel = (r: FamilyRelationship) => {
+    const from =
+      r.fromUid === profile?.uid
+        ? (profile.displayName ?? 'You')
+        : (memberByUid(r.fromUid)?.displayName ?? r.fromUid);
+    const to =
+      r.toUid === profile?.uid
+        ? (profile.displayName ?? 'You')
+        : (memberByUid(r.toUid)?.displayName ?? r.toUid);
+    return `${from} → ${to} (${r.relationshipType})`;
+  };
+
+  const nodeUidsMy = useMemo(() => {
+    const uid = profile?.uid ?? '';
+    const set = new Set<string>(uid ? [uid] : []);
+    relationships.forEach((r) => {
+      if (r.fromUid === uid || r.toUid === uid) {
+        set.add(r.fromUid);
+        set.add(r.toUid);
+      }
+    });
+    return Array.from(set);
+  }, [profile?.uid, relationships]);
+
+  const nodeUidsFull = useMemo(() => {
+    const uids = new Set(directory.map((m) => m.uid));
+    if (profile?.uid) uids.add(profile.uid);
+    return Array.from(uids);
+  }, [directory, profile?.uid]);
+  const edgesMy = useMemo(
+    () => relationships.filter((r) => nodeUidsMy.includes(r.fromUid) && nodeUidsMy.includes(r.toUid)),
+    [relationships, nodeUidsMy],
+  );
+  const edgesFull = relationships;
+
+  const nodesMy = useMemo(() => {
+    const members: DirectoryMember[] = [];
+    for (const uid of nodeUidsMy) {
+      const m = directory.find((md) => md.uid === uid);
+      if (m) {
+        members.push(m);
+      } else if (uid === profile?.uid && profile) {
+        members.push({
+          id: profile.id ?? profile.uid,
+          uid: profile.uid,
+          displayName: profile.displayName ?? 'You',
+          email: profile.email ?? '',
+          photoURL: profile.photoURL ?? null,
+          role: profile.role,
+          groupId: profile.groupId ?? null,
+        });
+      }
+    }
+    return members;
+  }, [nodeUidsMy, directory, profile]);
+  const nodesFull = useMemo(() => {
+    const members: DirectoryMember[] = [];
+    for (const uid of nodeUidsFull) {
+      const m = directory.find((md) => md.uid === uid);
+      if (m) {
+        members.push(m);
+      } else if (uid === profile?.uid && profile) {
+        members.push({
+          id: profile.id ?? profile.uid,
+          uid: profile.uid,
+          displayName: profile.displayName ?? 'You',
+          email: profile.email ?? '',
+          photoURL: profile.photoURL ?? null,
+          role: profile.role,
+          groupId: profile.groupId ?? null,
+        });
+      }
+    }
+    return members;
+  }, [nodeUidsFull, directory, profile]);
+  const centerUid = viewMode === 'my' ? profile?.uid ?? null : null;
+  const nodes = viewMode === 'my' ? nodesMy : nodesFull;
+  const edges = viewMode === 'my' ? edgesMy : edgesFull;
+
+  const graphWidth = 1100;
+  const graphHeight = 600;
+  const centerX = graphWidth / 2;
+  const centerY = graphHeight / 2;
+  const radius = Math.min(graphWidth, graphHeight) * 0.38;
+  const nodePositions = useMemo(() => {
+    const map: Record<string, { x: number; y: number }> = {};
+    const list = viewMode === 'my' ? nodeUidsMy : nodeUidsFull;
+    if (viewMode === 'my' && centerUid) {
+      map[centerUid] = { x: centerX, y: centerY };
+      const onCircle = list.filter((uid) => uid !== centerUid);
+      onCircle.forEach((uid, i) => {
+        const angle = (2 * Math.PI * i) / onCircle.length - Math.PI / 2;
+        map[uid] = {
+          x: centerX + radius * Math.cos(angle),
+          y: centerY + radius * Math.sin(angle),
+        };
+      });
+    } else {
+      list.forEach((uid, i) => {
+        const angle = (2 * Math.PI * i) / list.length - Math.PI / 2;
+        map[uid] = {
+          x: centerX + radius * Math.cos(angle),
+          y: centerY + radius * Math.sin(angle),
+        };
+      });
+    }
+    return map;
+  }, [viewMode, centerUid, nodeUidsMy, nodeUidsFull, centerX, centerY, radius]);
+
+  const flowNodes: FlowNode[] = useMemo(() => {
+    return nodes
+      .filter((m) => nodePositions[m.uid])
+      .map((member) => ({
+        id: member.uid,
+        type: 'familyMember',
+        position: nodePositions[member.uid] ?? { x: 0, y: 0 },
+        data: {
+          label: member.displayName,
+          initials: getSingleInitial(member.displayName),
+          photoURL: member.photoURL ?? null,
+          isCenter: member.uid === centerUid,
+        },
+      }));
+  }, [nodes, nodePositions, centerUid]);
+
+  const flowEdges: FlowEdge[] = useMemo(() => {
+    return edges
+      .filter((e) => nodePositions[e.fromUid] && nodePositions[e.toUid])
+      .map((edge) => ({
+        id: edge.id,
+        type: 'familyRelationship',
+        source: edge.fromUid,
+        target: edge.toUid,
+        label: edge.relationshipType,
+        data: { label: edge.relationshipType },
+      }));
+  }, [edges, nodePositions]);
+
+  const [flowNodesState, setFlowNodesState] = useState<FlowNode[]>(flowNodes);
+  const [flowEdgesState, setFlowEdgesState] = useState<FlowEdge[]>(flowEdges);
+  useEffect(() => {
+    setFlowNodesState(flowNodes);
+    setFlowEdgesState(flowEdges);
+  }, [flowNodes, flowEdges]);
+
+  const onNodesChange = useCallback(
+    (changes: Parameters<typeof applyNodeChanges>[0]) =>
+      setFlowNodesState((nds) => applyNodeChanges(changes, nds)),
+    [],
+  );
+  const onEdgesChange = useCallback(
+    (changes: Parameters<typeof applyEdgeChanges>[0]) =>
+      setFlowEdgesState((eds) => applyEdgeChanges(changes, eds)),
+    [],
+  );
+
+  if (!profile) return null;
+
+  return (
+    <section className="page-section">
+      <SectionIntro
+        eyebrow="Family tree"
+        title="Relationships and connections"
+        body="Add your relationship to other family members and explore the tree. Your view starts with you at the center; the full tree shows everyone."
+      />
+      <div className="content-grid two-up">
+        <Card accent="warm">
+          <SectionHeader title="Add relationship" meta="You and another member" />
+          <form className="form-grid" onSubmit={onSubmitAdd}>
+            <label>
+              Family member
+              <select
+                value={addForm.toUid}
+                onChange={(e) => setAddForm((f) => ({ ...f, toUid: e.target.value }))}
+                aria-label="Select family member"
+              >
+                <option value="">— Select —</option>
+                {otherMembers.map((m) => (
+                  <option key={m.uid} value={m.uid}>
+                    {m.displayName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Relationship
+              <RelationshipCombobox
+                value={addForm.relationshipType}
+                onChange={(v) => setAddForm((f) => ({ ...f, relationshipType: v }))}
+                ariaLabel="Relationship type"
+                placeholder="Type to search..."
+              />
+            </label>
+            <div className="stack-row">
+              <button type="submit" className="cta-button" disabled={!addForm.toUid}>
+                Add
+              </button>
+            </div>
+          </form>
+        </Card>
+        <Card>
+          <SectionHeader title="My relationships" meta={`${myRelationships.length} links`} />
+          <div className="list-stack compact">
+            {myRelationships.length === 0 ? (
+              <p className="helper-text">No relationships yet. Add one above.</p>
+            ) : (
+              myRelationships.map((r) => (
+                <div key={r.id} className="stack-row" style={{ alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <span className="helper-text">{labelForRel(r)}</span>
+                  {canEditRel(r) && (
+                    <span className="stack-row">
+                      {editingId === r.id ? (
+                        <>
+                          <RelationshipCombobox
+                            value={editingType ?? r.relationshipType}
+                            onChange={(v) => setEditingType(v)}
+                            ariaLabel="Edit relationship type"
+                            placeholder="Type to search..."
+                          />
+                          <button type="button" className="ghost-button" onClick={() => void onSaveEdit()}>
+                            Save
+                          </button>
+                          <button type="button" className="ghost-button" onClick={() => { setEditingId(null); setEditingType(null); }}>
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button type="button" className="ghost-button" onClick={() => { setEditingId(r.id); setEditingType(r.relationshipType); }}>
+                            Edit
+                          </button>
+                          <button type="button" className="ghost-button danger-button" onClick={() => void onDeleteRel(r)}>
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </span>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+      </div>
+      <div className="family-tree-graph-wrap">
+        <div className="stack-row" style={{ marginBottom: '0.75rem', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={viewMode === 'my' ? 'cta-button' : 'ghost-button'}
+            onClick={() => setViewMode('my')}
+          >
+            My tree
+          </button>
+          <button
+            type="button"
+            className={viewMode === 'full' ? 'cta-button' : 'ghost-button'}
+            onClick={() => setViewMode('full')}
+          >
+            Full family tree
+          </button>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => setTreeModalOpen(true)}
+            aria-label="Open family tree in full screen"
+          >
+            Expand
+          </button>
+        </div>
+        <div className="family-tree-graph" style={{ width: '100%', maxWidth: graphWidth, height: graphHeight }}>
+          <ReactFlowProvider>
+            <ReactFlow
+              nodes={flowNodesState}
+              edges={flowEdgesState}
+              nodeTypes={familyTreeNodeTypes}
+              edgeTypes={familyTreeEdgeTypes}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              fitView
+              fitViewOptions={{ padding: 0.15, duration: 0 }}
+              minZoom={0.2}
+              maxZoom={1.5}
+              nodesDraggable={true}
+              nodesConnectable={false}
+              elementsSelectable={true}
+              proOptions={{ hideAttribution: true }}
+              className="family-tree-react-flow"
+            >
+              <Controls />
+              <MiniMap />
+            </ReactFlow>
+          </ReactFlowProvider>
+        </div>
+      </div>
+      {treeModalOpen && (
+        <div
+          className="family-tree-modal-backdrop"
+          onClick={() => setTreeModalOpen(false)}
+          role="presentation"
+        >
+          <div
+            className="family-tree-modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="family-tree-modal-title"
+          >
+            <div className="family-tree-modal-header">
+              <h2 id="family-tree-modal-title">Family tree</h2>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setTreeModalOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="family-tree-modal-chart">
+              <ReactFlowProvider>
+                <ReactFlow
+                  nodes={flowNodesState}
+                  edges={flowEdgesState}
+                  nodeTypes={familyTreeNodeTypes}
+                  edgeTypes={familyTreeEdgeTypes}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  fitView
+                  fitViewOptions={{ padding: 0.15, duration: 0 }}
+                  minZoom={0.2}
+                  maxZoom={1.5}
+                  nodesDraggable={true}
+                  nodesConnectable={false}
+                  elementsSelectable={true}
+                  proOptions={{ hideAttribution: true }}
+                  className="family-tree-react-flow"
+                >
+                  <Controls />
+                  <MiniMap />
+                </ReactFlow>
+              </ReactFlowProvider>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
 const HelpPage = () => {
   return (
@@ -1750,7 +2396,7 @@ const EventAssetCard = ({
     endAt: eventItem.endAt && typeof eventItem.endAt === 'string' && (eventItem.endAt as string).length >= 16 ? (eventItem.endAt as string).slice(0, 16) : '',
   });
 
-  const canEdit = canManage || eventItem.createdBy === ownerUid;
+  const canEdit = canManage;
   const isEditing = editingEventId === eventItem.id;
 
   const myRsvp = rsvps.find((r) => r.userId === ownerUid);
@@ -1904,7 +2550,7 @@ const HotelAssetCard = ({
     deadline: hotel.deadline ? (typeof hotel.deadline === 'string' ? (hotel.deadline as string).slice(0, 10) : '') : '',
   });
 
-  const canEdit = canManage || hotel.createdBy === ownerUid;
+  const canEdit = canManage;
 
   const saveEdit = async () => {
     await updateHotel(hotel.id, {

@@ -9,9 +9,13 @@
     "build:functions": "npm --prefix functions run build",
     "check": "npm run lint && npm run build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deploy:rules": "firebase deploy --only firestore",
+    "deploy:hosting": "npm run build && firebase deploy --only hosting",
+    "deploy": "npm run build && firebase deploy"
   },
   "dependencies": {
+    "@xyflow/react": "^12.10.1",
     "firebase": "^12.10.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

@@ -106,6 +106,13 @@ service cloud.firestore {
       allow create, update, delete: if isOrganizer();
     }
 
+    match /flights/{flightId} {
+      allow read: if isApproved();
+      allow create: if isApproved()
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isApproved() && isOrganizer();
+    }
+
     match /bulletinPosts/{postId} {
       allow read: if isApproved();
       allow create: if isApproved()
@@ -153,8 +160,20 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.kind in ['image', 'document']
         && request.resource.data.downloadUrl is string;
+      allow update, delete: if isApproved() && isOrganizer();
+    }
+
+    match /familyRelationships/{relId} {
+      allow read: if isApproved();
+      allow create: if isApproved()
+        && request.resource.data.fromUid is string
+        && request.resource.data.toUid is string
+        && request.resource.data.relationshipType in ['parent', 'child', 'spouse', 'wife', 'husband', 'partner', 'sibling', 'cousin', 'grandparent', 'grandchild', 'aunt', 'uncle', 'niece', 'nephew']
+        && request.resource.data.createdBy == request.auth.uid
+        && (request.resource.data.fromUid == request.auth.uid || request.resource.data.toUid == request.auth.uid)
+        && request.resource.data.fromUid != request.resource.data.toUid;
       allow update, delete: if isApproved()
-        && (resource.data.ownerUid == request.auth.uid || isOrganizer());
+        && (resource.data.createdBy == request.auth.uid || isAdmin());
     }
 
     match /invites/{inviteId} {
