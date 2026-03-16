@@ -47,6 +47,24 @@ Private Firebase-powered member portal for planning a family reunion with approv
 - Build functions: `npm run build:functions`
 - Deploy with Firebase after authenticating and enabling Hosting, Firestore, Storage, and Functions on project `gtfast-7bf85`
 
+## Why "Demo mode"?
+
+The app shows **Demo mode** when Firebase config is missing or incomplete. Then it uses fake data so you can still click around. Config comes from env vars (`VITE_FIREBASE_*`).
+
+- **Local:** Add a `.env.local` (copy from `.env.example`) and fill in your real Firebase web app config from [Firebase Console → Project settings → Your apps](https://console.firebase.google.com/project/gtfast-7bf85/settings/general). Restart `npm run dev` after changing env.
+- **Deployed site:** The build must have those env vars at build time. The GitHub Action uses repository secrets (see below); if they are not set, the deployed app has no config and stays in demo mode.
+
+## GitHub Actions deployment
+
+Pushes to `main` (and manual runs) deploy Hosting and Functions via [`.github/workflows/deploy-firebase.yml`](.github/workflows/deploy-firebase.yml).
+
+1. **FIREBASE_TOKEN** (for deploy): run `firebase login:ci` and add the token as a repo secret.
+2. **Firebase web config** (so the live site is not in demo mode): add these repository secrets with values from Firebase Console → Project settings → Your apps → Web app:
+   - `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_MEASUREMENT_ID`
+   - Optional: `VITE_FUNCTIONS_URL` (default `/api`), `VITE_BOOTSTRAP_ADMIN_EMAIL`
+
+The workflow uses the project in `.firebaserc` (default: `gtfast-7bf85`).
+
 ## Data model highlights
 
 - `users`: approval state, role, profile
