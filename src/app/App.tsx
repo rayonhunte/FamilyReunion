@@ -6,6 +6,7 @@ import {
   addBulletinComment,
   createBulletinPost,
   createEvent,
+  createFlight,
   createHotel,
   createOrGetDirectThread,
   deleteAsset,
@@ -16,12 +17,14 @@ import {
   updateProfileFields,
   uploadAsset,
   uploadBulletinAttachment,
+  uploadProfileImage,
   useAssociatedAssets,
   useAssets,
   useBulletinComments,
   useBulletinPosts,
   useDirectory,
   useEvents,
+  useFlights,
   useHotels,
   usePendingApprovals,
   useThreadMessages,
@@ -34,6 +37,7 @@ import type {
   BulletinPost,
   DirectoryMember,
   EventItem,
+  Flight,
   Hotel,
   Registration,
   Role,
@@ -77,12 +81,15 @@ const parseMentionSegments = (text: string) => {
 
 const navItems = [
   { label: 'Dashboard', to: '/app' },
+  { label: 'Profile', to: '/app/profile' },
   { label: 'Registration', to: '/app/registration' },
   { label: 'Events', to: '/app/events' },
   { label: 'Hotels', to: '/app/hotels' },
+  { label: 'Flights', to: '/app/flights' },
   { label: 'Bulletin', to: '/app/bulletin' },
   { label: 'Messages', to: '/app/messages' },
   { label: 'Files', to: '/app/files' },
+  { label: 'Help', to: '/app/help' },
   { label: 'Admin', to: '/app/admin' },
 ];
 
@@ -259,12 +266,15 @@ const PortalShell = () => {
       <main className="content-shell portal-content">
         <Routes>
           <Route path="/" element={<OverviewPage />} />
+          <Route path="profile" element={<ProfilePage />} />
           <Route path="registration" element={<RegistrationPage />} />
           <Route path="events" element={<EventsPage />} />
           <Route path="hotels" element={<HotelsPage />} />
+          <Route path="flights" element={<FlightsPage />} />
           <Route path="bulletin" element={<BulletinPage />} />
           <Route path="messages" element={<MessagesPage />} />
           <Route path="files" element={<FilesPage />} />
+          <Route path="help" element={<HelpPage />} />
           <Route path="admin" element={profile?.role === 'admin' ? <AdminPage /> : <Navigate to="/app" replace />} />
         </Routes>
       </main>
@@ -297,6 +307,7 @@ const OverviewPage = () => {
       <Card accent="warm">
         <SectionHeader title="How to use the portal" meta="Start here" />
         <ul className="checklist">
+          <li>Open Profile first to confirm the Google details we pulled in and add your short family bio.</li>
           <li>Open Registration first and complete your attendee details, RSVP, and travel notes.</li>
           <li>Check Events for the reunion timeline and Hotels for room block deadlines and booking links.</li>
           <li>Use Bulletin for shared family updates and Messages for direct coordination.</li>
@@ -323,11 +334,197 @@ const OverviewPage = () => {
         <Card accent="warm">
           <SectionHeader title="Member checklist" meta="For a smoother reunion weekend" />
           <ul className="checklist">
+            <li>Review your profile photo, name, phone, city, and short bio.</li>
             <li>Finish your registration profile and travel notes.</li>
             <li>Review hotel deadlines before the room block closes.</li>
             <li>Upload old photos or key PDFs to the shared files area.</li>
             <li>Use the bulletin for broad updates and direct messages for side coordination.</li>
           </ul>
+        </Card>
+      </div>
+    </section>
+  );
+};
+
+const ProfilePage = () => {
+  const { profile, user } = useAuth();
+  const [form, setForm] = useState({
+    displayName: profile?.displayName ?? user?.displayName ?? '',
+    phone: profile?.phone ?? user?.phoneNumber ?? '',
+    city: profile?.city ?? '',
+    bio: profile?.bio ?? '',
+  });
+  const [status, setStatus] = useState('');
+  const [uploadStatus, setUploadStatus] = useState('');
+
+  if (!profile || !user) {
+    return null;
+  }
+
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStatus('Saving profile...');
+    await updateProfileFields(profile.uid, {
+      displayName: form.displayName.trim() || user.displayName || profile.displayName,
+      phone: form.phone.trim(),
+      city: form.city.trim(),
+      bio: form.bio.trim(),
+    });
+    setStatus('Profile saved.');
+  };
+
+  const onProfileImageChange = async (event: FormEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setUploadStatus('Uploading profile image...');
+    await uploadProfileImage(profile.uid, file);
+    setUploadStatus('Profile image updated.');
+    event.currentTarget.value = '';
+  };
+
+  const firstName = (profile.displayName || user.displayName || 'Family').split(' ')[0];
+  const profilePhoto = profile.photoURL || user.photoURL;
+  const createdAt = user.metadata?.creationTime
+    ? new Date(user.metadata.creationTime).toLocaleDateString()
+    : 'Google account';
+  const lastSignInAt = user.metadata?.lastSignInTime
+    ? new Date(user.metadata.lastSignInTime).toLocaleString()
+    : 'Unavailable';
+  const emailVerified = typeof user.emailVerified === 'boolean' ? user.emailVerified : true;
+
+  return (
+    <section className="page-section">
+      <SectionIntro
+        eyebrow="Profile"
+        title={`${firstName}'s member profile`}
+        body="We pull your name, email, and profile photo from Google when you sign in. Add the family details you want other approved members and admins to have."
+      />
+
+      <div className="content-grid two-up profile-layout">
+        <Card>
+          <SectionHeader title="Google account details" meta="Pulled from sign-in" />
+          <div className="profile-summary">
+            {profilePhoto ? (
+              <img alt={profile.displayName} className="profile-avatar" src={profilePhoto} />
+            ) : (
+              <div className="profile-avatar profile-avatar-fallback" aria-hidden="true">
+                {firstName.slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            <div className="list-stack">
+              <article className="list-item profile-detail-row">
+                <div>
+                  <strong>Google name</strong>
+                  <p>{user.displayName || profile.displayName || 'Not provided by Google'}</p>
+                </div>
+              </article>
+              <article className="list-item profile-detail-row">
+                <div>
+                  <strong>Email</strong>
+                  <p>{user.email || profile.email}</p>
+                </div>
+              </article>
+              <article className="list-item profile-detail-row">
+                <div>
+                  <strong>Account status</strong>
+                  <p>{profile.status} · {profile.role}</p>
+                </div>
+              </article>
+              <article className="list-item profile-detail-row">
+                <div>
+                  <strong>Email verified</strong>
+                  <p>{emailVerified ? 'Yes' : 'No'}</p>
+                </div>
+              </article>
+              <article className="list-item profile-detail-row">
+                <div>
+                  <strong>Google account created</strong>
+                  <p>{createdAt}</p>
+                </div>
+              </article>
+              <article className="list-item profile-detail-row">
+                <div>
+                  <strong>Last sign-in</strong>
+                  <p>{lastSignInAt}</p>
+                </div>
+              </article>
+            </div>
+          </div>
+        </Card>
+
+        <Card accent="warm">
+          <SectionHeader title="Family bio data" meta="Editable by you" />
+          <form className="form-grid" onSubmit={onSubmit}>
+            <label>
+              Display name
+              <input
+                value={form.displayName}
+                onChange={(event) => setForm({ ...form, displayName: event.target.value })}
+                placeholder="How your family should see your name"
+              />
+            </label>
+            <label>
+              Phone
+              <input
+                value={form.phone}
+                onChange={(event) => setForm({ ...form, phone: event.target.value })}
+                placeholder="Best contact number"
+              />
+            </label>
+            <label>
+              City
+              <input
+                value={form.city}
+                onChange={(event) => setForm({ ...form, city: event.target.value })}
+                placeholder="Where you live"
+              />
+            </label>
+            <label>
+              Email
+              <input value={user.email || profile.email} readOnly />
+            </label>
+            <label className="full-span">
+              Bio
+              <textarea
+                rows={6}
+                value={form.bio}
+                onChange={(event) => setForm({ ...form, bio: event.target.value })}
+                placeholder="Share a short update about yourself, your household, or what everyone should know before the reunion."
+              />
+            </label>
+            <div className="form-actions full-span">
+              <button className="cta-button" type="submit">
+                Save profile
+              </button>
+            </div>
+            {status ? <p className="helper-text full-span">{status}</p> : null}
+          </form>
+        </Card>
+
+        <Card className="full-grid">
+          <SectionHeader title="Profile image" meta="Visible across the portal" />
+          <div className="profile-image-manager">
+            {profilePhoto ? (
+              <img alt={profile.displayName} className="profile-avatar profile-avatar-large" src={profilePhoto} />
+            ) : (
+              <div className="profile-avatar profile-avatar-fallback profile-avatar-large" aria-hidden="true">
+                {firstName.slice(0, 1).toUpperCase()}
+              </div>
+            )}
+            <div className="profile-upload-box">
+              <label className="upload-card compact-upload">
+                <span>Upload profile image</span>
+                <input accept="image/*" onChange={(event) => void onProfileImageChange(event)} type="file" />
+              </label>
+              <p className="helper-text">
+                Upload a JPG or PNG to replace the photo shown on your member profile and throughout the portal.
+              </p>
+              {uploadStatus ? <p className="helper-text">{uploadStatus}</p> : null}
+            </div>
+          </div>
         </Card>
       </div>
     </section>
@@ -357,6 +554,7 @@ const RegistrationPage = () => {
     setStatus('Saving registration...');
     await saveRegistration(profile.uid, form);
     await updateProfileFields(profile.uid, {
+      displayName: profile.displayName,
       bio: profile.bio,
       city: form.city,
       phone: form.phone,
@@ -630,6 +828,216 @@ const HotelsPage = () => {
         </Card>
       </div>
     </section>
+  );
+};
+
+const FlightsPage = () => {
+  const { profile } = useAuth();
+  const { data: flights } = useFlights();
+  const [form, setForm] = useState({
+    airline: '',
+    flightNumber: '',
+    departureAirport: '',
+    arrivalAirport: '',
+    departureAt: '',
+    arrivalAt: '',
+    travelerName: '',
+    notes: '',
+    confirmationCode: '',
+  });
+  const [status, setStatus] = useState('');
+
+  if (!profile) {
+    return null;
+  }
+
+  const visibleFlights = flights.filter(
+    (f) => f.groupId === profile.groupId || f.ownerUid === profile.uid,
+  );
+
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStatus('Saving flight...');
+    await createFlight({
+      ownerUid: profile.uid,
+      ownerName: form.travelerName.trim() || profile.displayName,
+      groupId: profile.groupId ?? null,
+      airline: form.airline.trim(),
+      flightNumber: form.flightNumber.trim(),
+      departureAirport: form.departureAirport.trim(),
+      arrivalAirport: form.arrivalAirport.trim(),
+      departureAt: form.departureAt,
+      arrivalAt: form.arrivalAt || undefined,
+      notes: form.notes.trim() || undefined,
+      confirmationCode: form.confirmationCode.trim() || undefined,
+    });
+    setStatus('Flight saved.');
+    setForm({
+      airline: '',
+      flightNumber: '',
+      departureAirport: '',
+      arrivalAirport: '',
+      departureAt: '',
+      arrivalAt: '',
+      travelerName: '',
+      notes: '',
+      confirmationCode: '',
+    });
+  };
+
+  return (
+    <section className="page-section">
+      <SectionIntro
+        eyebrow="Flights"
+        title="Family travel plans"
+        body="Add your flight details and share them with your family group. You can attach boarding passes, confirmations, or other documents to each flight."
+      />
+      <div className="content-grid two-up">
+        <Card>
+          <SectionHeader title="Family flights" meta={`${visibleFlights.length} flights`} />
+          <div className="list-stack">
+            {visibleFlights.map((flight) => (
+              <FlightAssetCard
+                key={flight.id}
+                flight={flight}
+                ownerUid={profile.uid}
+                ownerName={profile.displayName}
+              />
+            ))}
+          </div>
+        </Card>
+
+        <Card accent="cool">
+          <SectionHeader title="Add flight" meta="Visible to your family group" />
+          <form className="form-grid" onSubmit={onSubmit}>
+            <label>
+              Airline
+              <input
+                value={form.airline}
+                onChange={(event) => setForm({ ...form, airline: event.target.value })}
+                placeholder="e.g. Caribbean Airlines"
+              />
+            </label>
+            <label>
+              Flight number
+              <input
+                value={form.flightNumber}
+                onChange={(event) => setForm({ ...form, flightNumber: event.target.value })}
+                placeholder="e.g. BW 500"
+              />
+            </label>
+            <label>
+              Departure airport
+              <input
+                value={form.departureAirport}
+                onChange={(event) => setForm({ ...form, departureAirport: event.target.value })}
+                placeholder="e.g. JFK"
+              />
+            </label>
+            <label>
+              Arrival airport
+              <input
+                value={form.arrivalAirport}
+                onChange={(event) => setForm({ ...form, arrivalAirport: event.target.value })}
+                placeholder="e.g. GEO"
+              />
+            </label>
+            <label>
+              Departure date & time
+              <input
+                type="datetime-local"
+                value={form.departureAt}
+                onChange={(event) => setForm({ ...form, departureAt: event.target.value })}
+              />
+            </label>
+            <label>
+              Arrival date & time
+              <input
+                type="datetime-local"
+                value={form.arrivalAt}
+                onChange={(event) => setForm({ ...form, arrivalAt: event.target.value })}
+              />
+            </label>
+            <label>
+              Traveler name
+              <input
+                value={form.travelerName}
+                onChange={(event) => setForm({ ...form, travelerName: event.target.value })}
+                placeholder={profile.displayName}
+              />
+            </label>
+            <label>
+              Confirmation code
+              <input
+                value={form.confirmationCode}
+                onChange={(event) => setForm({ ...form, confirmationCode: event.target.value })}
+                placeholder="Optional"
+              />
+            </label>
+            <label className="full-span">
+              Notes
+              <textarea
+                value={form.notes}
+                onChange={(event) => setForm({ ...form, notes: event.target.value })}
+                rows={3}
+                placeholder="Optional travel notes"
+              />
+            </label>
+            <div className="form-actions full-span">
+              <button className="cta-button" type="submit">
+                Save flight
+              </button>
+              {status ? <span className="helper-text">{status}</span> : null}
+            </div>
+          </form>
+        </Card>
+      </div>
+    </section>
+  );
+};
+
+const FlightAssetCard = ({
+  flight,
+  ownerUid,
+  ownerName,
+}: {
+  flight: Flight;
+  ownerUid: string;
+  ownerName: string;
+}) => {
+  const { data: assets } = useAssociatedAssets('flight', flight.id);
+  const [previewAsset, setPreviewAsset] = useState<AssetRecord | null>(null);
+  const flightLabel = `${flight.airline} ${flight.flightNumber}`;
+
+  return (
+    <>
+      <article className="timeline-card attachment-card">
+        <div>
+          <span className="pill">{flight.ownerName}</span>
+          <h3>{flightLabel}</h3>
+          <p>
+            {flight.departureAirport} → {flight.arrivalAirport}
+          </p>
+          <p className="helper-text">
+            {formatDateTime(flight.departureAt)}
+            {flight.arrivalAt ? ` – ${formatDateTime(flight.arrivalAt)}` : ''}
+          </p>
+          {flight.notes ? <p>{flight.notes}</p> : null}
+        </div>
+        <AssociatedAssetSection
+          title="Flight documents & images"
+          relatedType="flight"
+          relatedId={flight.id}
+          relatedLabel={flightLabel}
+          assets={assets}
+          canManage={true}
+          ownerUid={ownerUid}
+          ownerName={ownerName}
+          onPreview={setPreviewAsset}
+        />
+      </article>
+      <AssetPreviewModal asset={previewAsset} onClose={() => setPreviewAsset(null)} />
+    </>
   );
 };
 
@@ -1110,6 +1518,62 @@ const FilesPage = () => {
   );
 };
 
+const HelpPage = () => {
+  return (
+    <section className="page-section">
+      <SectionIntro
+        eyebrow="Help"
+        title="How to use the portal"
+        body="New to the family reunion portal? This guide walks you through each section so you can get the most out of the hub."
+      />
+
+      <Card accent="warm">
+        <SectionHeader title="Quick start for new users" meta="Step by step" />
+        <ul className="checklist">
+          <li><strong>Profile</strong> — Confirm your name, photo, phone, and city from Google, and add a short family bio so others know who you are.</li>
+          <li><strong>Registration</strong> — Enter attendee details, RSVP status, emergency contact, dietary and accessibility notes, and travel plans.</li>
+          <li><strong>Events</strong> — View the reunion schedule (venues, times). Organizers and admins can add or edit events.</li>
+          <li><strong>Hotels</strong> — See recommended stays, room blocks, booking links, and deadlines. Organizers maintain this list.</li>
+          <li><strong>Flights</strong> — Add your flight details (airline, times, airports) and attach boarding passes or confirmations. Flights are visible to your family group.</li>
+          <li><strong>Bulletin</strong> — Post announcements and discussions for the whole family. You can mention members, events, or documents and attach images.</li>
+          <li><strong>Messages</strong> — Start direct threads with other members for private coordination.</li>
+          <li><strong>Files</strong> — Upload shared images and PDFs (e.g. photos, handouts). You can also attach files to specific events, hotels, or flights from their pages.</li>
+        </ul>
+      </Card>
+
+      <div className="content-grid two-up">
+        <Card>
+          <SectionHeader title="Profile & registration" meta="Your identity in the portal" />
+          <p className="helper-text">
+            Start with <strong>Profile</strong> to set your display name and bio. Then open <strong>Registration</strong> to complete your RSVP, contact info, dietary and accessibility needs, and travel notes. This information helps organizers plan and keep everyone safe.
+          </p>
+        </Card>
+
+        <Card>
+          <SectionHeader title="Events, hotels & flights" meta="Logistics" />
+          <p className="helper-text">
+            <strong>Events</strong> show the reunion timeline. <strong>Hotels</strong> list room blocks and booking links. In <strong>Flights</strong>, add your travel details and upload boarding passes or confirmations (images and PDFs, up to 5MB). Your flights are shared with members in your family group.
+          </p>
+        </Card>
+
+        <Card>
+          <SectionHeader title="Bulletin & messages" meta="Communication" />
+          <p className="helper-text">
+            Use the <strong>Bulletin</strong> for announcements and group discussion. Use <strong>Messages</strong> to chat one-on-one with other approved members. You can search by name or email to start a new thread.
+          </p>
+        </Card>
+
+        <Card>
+          <SectionHeader title="Files & attachments" meta="Shared documents and images" />
+          <p className="helper-text">
+            The <strong>Files</strong> page is for general uploads (images and PDFs). You can also attach files to a specific event, hotel, or flight from their cards on the Events, Hotels, and Flights pages. All uploads are visible to approved members.
+          </p>
+        </Card>
+      </div>
+    </section>
+  );
+};
+
 const EventAssetCard = ({
   eventItem,
   canManage,
@@ -1211,7 +1675,7 @@ const AssociatedAssetSection = ({
   onPreview,
 }: {
   title: string;
-  relatedType: 'event' | 'hotel';
+  relatedType: 'event' | 'hotel' | 'flight';
   relatedId: string;
   relatedLabel: string;
   assets: AssetRecord[];
@@ -1222,10 +1686,17 @@ const AssociatedAssetSection = ({
 }) => {
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState('');
+  const maxFileSizeBytes = 5 * 1024 * 1024; // 5MB
 
   const onFileChange = async (event: FormEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     if (!file || !ownerUid) {
+      return;
+    }
+
+    if (file.size > maxFileSizeBytes) {
+      setStatus('Please upload files smaller than 5MB (images or PDFs).');
+      event.currentTarget.value = '';
       return;
     }
 

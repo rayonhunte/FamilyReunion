@@ -2,7 +2,7 @@ export type ApprovalStatus = 'pending' | 'approved' | 'disabled';
 export type Role = 'member' | 'organizer' | 'admin';
 export type RSVPStatus = 'attending' | 'maybe' | 'not-attending';
 export type AssetKind = 'image' | 'document';
-export type AssetRelatedType = 'general' | 'event' | 'hotel';
+export type AssetRelatedType = 'general' | 'event' | 'hotel' | 'flight';
 
 export interface UserProfile {
   id: string;
@@ -77,6 +77,23 @@ export interface Hotel {
   roomBlock: string;
   rateNotes: string;
   deadline?: unknown;
+}
+
+export interface Flight {
+  id: string;
+  ownerUid: string;
+  ownerName: string;
+  groupId?: string | null;
+  airline: string;
+  flightNumber: string;
+  departureAirport: string;
+  arrivalAirport: string;
+  departureAt: unknown;
+  arrivalAt?: unknown;
+  notes?: string;
+  confirmationCode?: string;
+  seat?: string;
+  updatedAt?: unknown;
 }
 
 export interface BulletinPost {

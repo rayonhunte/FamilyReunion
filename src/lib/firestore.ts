@@ -20,6 +20,7 @@ import {
   demoAssets,
   demoComments,
   demoEvents,
+  demoFlights,
   demoHotels,
   demoMembers,
   demoMessages,
@@ -36,6 +37,7 @@ import type {
   BulletinPost,
   DirectoryMember,
   EventItem,
+  Flight,
   Hotel,
   Registration,
   Thread,
@@ -101,6 +103,19 @@ export const useHotels = () =>
     useMemo(
       () =>
         db ? (setData: (value: Hotel[]) => void) => subscribeCollection<Hotel>('hotels', [orderBy('deadline', 'asc')], setData) : undefined,
+      [],
+    ),
+  );
+
+export const useFlights = () =>
+  useDemoOrLive<Flight[]>(
+    demoFlights,
+    useMemo(
+      () =>
+        db
+          ? (setData: (value: Flight[]) => void) =>
+              subscribeCollection<Flight>('flights', [orderBy('departureAt', 'asc')], setData)
+          : undefined,
       [],
     ),
   );
@@ -320,6 +335,25 @@ export const createHotel = async (payload: Omit<Hotel, 'id'>) => {
   });
 };
 
+export const createFlight = async (payload: Omit<Flight, 'id'>) => {
+  if (!db) {
+    return;
+  }
+
+  await addDoc(collection(db!, 'flights'), {
+    ...payload,
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const deleteFlight = async (flightId: string) => {
+  if (!db) {
+    return;
+  }
+
+  await deleteDoc(doc(db!, 'flights', flightId));
+};
+
 export const createBulletinPost = async (payload: Omit<BulletinPost, 'id' | 'createdAt' | 'updatedAt'>) => {
   if (!db) {
     return;
@@ -515,7 +549,29 @@ export const deleteStorageFile = async (path?: string) => {
   await deleteObject(ref(storage, path));
 };
 
-export const updateProfileFields = async (uid: string, payload: Pick<UserProfile, 'bio' | 'city' | 'phone'>) => {
+export const uploadProfileImage = async (uid: string, file: File) => {
+  if (!db || !storage) {
+    return null;
+  }
+
+  const safeFileName = `avatar-${uid}`;
+  const storagePath = `profile-images/${uid}/${safeFileName}`;
+  const storageRef = ref(storage, storagePath);
+  await uploadBytes(storageRef, file, { contentType: file.type });
+  const downloadUrl = await getDownloadURL(storageRef);
+
+  await updateDoc(doc(db!, 'users', uid), {
+    photoURL: downloadUrl,
+    updatedAt: serverTimestamp(),
+  });
+
+  return downloadUrl;
+};
+
+export const updateProfileFields = async (
+  uid: string,
+  payload: Pick<UserProfile, 'displayName' | 'bio' | 'city' | 'phone'>,
+) => {
   if (!db) {
     return;
   }
