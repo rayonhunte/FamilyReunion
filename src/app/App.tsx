@@ -286,6 +286,7 @@ const PendingPage = () => {
 
 const PortalShell = () => {
   const { profile, signOutUser, isDemoMode } = useAuth();
+  const canAccessAdminPanel = profile?.role === 'admin' || profile?.role === 'organizer';
 
   return (
     <div className="portal-page">
@@ -296,7 +297,15 @@ const PortalShell = () => {
         </div>
         <nav className="hero-nav portal-nav">
           {navItems
-            .filter((item) => (profile?.role === 'admin' ? true : item.to !== '/app/admin' && item.to !== '/app/audit'))
+            .filter((item) => {
+              if (item.to === '/app/audit') {
+                return profile?.role === 'admin';
+              }
+              if (item.to === '/app/admin') {
+                return canAccessAdminPanel;
+              }
+              return true;
+            })
             .map((item) => (
               <NavLink key={item.to} to={item.to} end={item.to === '/app'}>
                 {item.label}
@@ -329,7 +338,7 @@ const PortalShell = () => {
           <Route path="family-tree" element={<FamilyTreePage />} />
           <Route path="help" element={<HelpPage />} />
           <Route path="audit" element={profile?.role === 'admin' ? <AuditPage /> : <Navigate to="/app" replace />} />
-          <Route path="admin" element={profile?.role === 'admin' ? <AdminPage /> : <Navigate to="/app" replace />} />
+          <Route path="admin" element={canAccessAdminPanel ? <AdminPage /> : <Navigate to="/app" replace />} />
         </Routes>
       </main>
     </div>
@@ -2811,6 +2820,7 @@ const AdminPage = () => {
   const { data: pendingUsers } = usePendingApprovals();
   const { data: directory } = useDirectory();
   const [inviteLink, setInviteLink] = useState('');
+  const canManageUsers = profile?.role === 'admin';
 
   if (!profile || !user) {
     return null;
@@ -2841,6 +2851,28 @@ const AdminPage = () => {
     notify('Invite link created.', 'saved');
   };
 
+  const copyInviteLink = async () => {
+    if (!inviteLink) {
+      return;
+    }
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(inviteLink);
+      } else {
+        const fallbackInput = document.createElement('input');
+        fallbackInput.value = inviteLink;
+        document.body.appendChild(fallbackInput);
+        fallbackInput.select();
+        document.execCommand('copy');
+        document.body.removeChild(fallbackInput);
+      }
+      notify('Invite link copied.', 'saved');
+    } catch {
+      notify('Could not copy link. Please copy it manually.', 'error');
+    }
+  };
+
   const changeRole = async (uid: string, role: Role) => {
     await withToken((token) => callBackend(token, 'changeRole', { uid, role }));
     notify('Role updated.', 'updated');
@@ -2850,31 +2882,36 @@ const AdminPage = () => {
     <section className="page-section">
       <SectionIntro eyebrow="Admin" title="Approvals, roles, and invites" body="Privileged actions route through the single HTTPS function so admin credentials never reach the client." />
       <div className="content-grid two-up">
-        <Card accent="warm">
-          <SectionHeader title="Pending approvals" meta={`${pendingUsers.length} waiting`} />
-          <div className="list-stack">
-            {pendingUsers.map((member) => (
-              <article className="list-item" key={member.uid}>
-                <div>
-                  <strong>{member.displayName}</strong>
-                  <p>{member.email}</p>
-                </div>
-                <button className="ghost-button" onClick={() => void approveMember(member.uid)}>
-                  Approve
-                </button>
-              </article>
-            ))}
-          </div>
-        </Card>
+        {canManageUsers ? (
+          <Card accent="warm">
+            <SectionHeader title="Pending approvals" meta={`${pendingUsers.length} waiting`} />
+            <div className="list-stack">
+              {pendingUsers.map((member) => (
+                <article className="list-item" key={member.uid}>
+                  <div>
+                    <strong>{member.displayName}</strong>
+                    <p>{member.email}</p>
+                  </div>
+                  <button className="ghost-button" onClick={() => void approveMember(member.uid)}>
+                    Approve
+                  </button>
+                </article>
+              ))}
+            </div>
+          </Card>
+        ) : null}
 
         <Card>
-          <SectionHeader title="Create invite link" meta="Single function API" />
+          <SectionHeader title="Create invite link" meta="Organizer or admin" />
           <p className="helper-text">
-            Invite links are opaque tokens created server-side. Sending email can be added later without changing the client contract.
+            Create a shareable login link, copy it, and send it to family members so they can sign in and request access.
           </p>
-          <div className="stack-row">
+          <div className="stack-row" style={{ flexWrap: 'wrap' }}>
             <button className="cta-button" onClick={() => void createInvite()}>
               Create invite
+            </button>
+            <button className="ghost-button" disabled={!inviteLink} onClick={() => void copyInviteLink()}>
+              Copy invite link
             </button>
             {inviteLink ? (
               <a className="ghost-link" href={inviteLink} target="_blank" rel="noreferrer">
@@ -2882,29 +2919,37 @@ const AdminPage = () => {
               </a>
             ) : null}
           </div>
+          {inviteLink ? (
+            <label>
+              Invite URL
+              <input readOnly value={inviteLink} />
+            </label>
+          ) : null}
         </Card>
 
-        <Card className="full-grid">
-          <SectionHeader title="Role assignments" meta="Approved directory" />
-          <div className="list-stack">
-            {directory.map((member) => (
-              <article className="list-item" key={member.uid}>
-                <div>
-                  <strong>{member.displayName}</strong>
-                  <p>{member.email}</p>
-                </div>
-                <div className="stack-row">
-                  <span className="pill">{member.role}</span>
-                  <select defaultValue={member.role} onChange={(event) => void changeRole(member.uid, event.target.value as Role)}>
-                    <option value="member">member</option>
-                    <option value="organizer">organizer</option>
-                    <option value="admin">admin</option>
-                  </select>
-                </div>
-              </article>
-            ))}
-          </div>
-        </Card>
+        {canManageUsers ? (
+          <Card className="full-grid">
+            <SectionHeader title="Role assignments" meta="Approved directory" />
+            <div className="list-stack">
+              {directory.map((member) => (
+                <article className="list-item" key={member.uid}>
+                  <div>
+                    <strong>{member.displayName}</strong>
+                    <p>{member.email}</p>
+                  </div>
+                  <div className="stack-row">
+                    <span className="pill">{member.role}</span>
+                    <select defaultValue={member.role} onChange={(event) => void changeRole(member.uid, event.target.value as Role)}>
+                      <option value="member">member</option>
+                      <option value="organizer">organizer</option>
+                      <option value="admin">admin</option>
+                    </select>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </Card>
+        ) : null}
       </div>
     </section>
   );

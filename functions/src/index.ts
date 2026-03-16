@@ -32,14 +32,14 @@ const getBearerToken = (header?: string) => {
   return header.slice('Bearer '.length);
 };
 
-const assertAdmin = async (uid: string) => {
+const hasApprovedRole = async (uid: string, roles: Role[]) => {
   const snapshot = await db.collection('users').doc(uid).get();
   const data = snapshot.data();
-  return data?.status === 'approved' && data?.role === 'admin';
+  return data?.status === 'approved' && roles.includes(data?.role as Role);
 };
 
 const approveUser = async (callerUid: string, payload: Record<string, unknown>) => {
-  if (!(await assertAdmin(callerUid))) {
+  if (!(await hasApprovedRole(callerUid, ['admin']))) {
     return forbidden('Admin role required.');
   }
 
@@ -84,7 +84,7 @@ const approveUser = async (callerUid: string, payload: Record<string, unknown>) 
 };
 
 const changeRole = async (callerUid: string, payload: Record<string, unknown>) => {
-  if (!(await assertAdmin(callerUid))) {
+  if (!(await hasApprovedRole(callerUid, ['admin']))) {
     return forbidden('Admin role required.');
   }
 
@@ -108,8 +108,8 @@ const changeRole = async (callerUid: string, payload: Record<string, unknown>) =
 };
 
 const createInvite = async (callerUid: string, payload: Record<string, unknown>) => {
-  if (!(await assertAdmin(callerUid))) {
-    return forbidden('Admin role required.');
+  if (!(await hasApprovedRole(callerUid, ['admin', 'organizer']))) {
+    return forbidden('Organizer or admin role required.');
   }
 
   const expiresInDays = typeof payload.expiresInDays === 'number' ? Math.max(1, Math.min(30, payload.expiresInDays)) : 14;
@@ -130,7 +130,7 @@ const createInvite = async (callerUid: string, payload: Record<string, unknown>)
 };
 
 const revokeInvite = async (callerUid: string, payload: Record<string, unknown>) => {
-  if (!(await assertAdmin(callerUid))) {
+  if (!(await hasApprovedRole(callerUid, ['admin']))) {
     return forbidden('Admin role required.');
   }
 
@@ -151,7 +151,7 @@ const revokeInvite = async (callerUid: string, payload: Record<string, unknown>)
 };
 
 const sendInvite = async (callerUid: string) => {
-  if (!(await assertAdmin(callerUid))) {
+  if (!(await hasApprovedRole(callerUid, ['admin']))) {
     return forbidden('Admin role required.');
   }
 
