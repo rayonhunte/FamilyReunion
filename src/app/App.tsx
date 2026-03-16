@@ -1896,6 +1896,43 @@ function FamilyTreeEdge({ id, sourceX, sourceY, targetX, targetY, data }: EdgePr
 
 const familyTreeEdgeTypes = { familyRelationship: FamilyTreeEdge };
 
+function FamilyTreeFlowChart({ flowNodes, flowEdges }: { flowNodes: FlowNode[]; flowEdges: FlowEdge[] }) {
+  const [nodes, setNodes] = useState<FlowNode[]>(flowNodes);
+  const [edges, setEdges] = useState<FlowEdge[]>(flowEdges);
+  const onNodesChange = useCallback(
+    (changes: Parameters<typeof applyNodeChanges>[0]) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    [],
+  );
+  const onEdgesChange = useCallback(
+    (changes: Parameters<typeof applyEdgeChanges>[0]) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+    [],
+  );
+  return (
+    <ReactFlowProvider>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={familyTreeNodeTypes}
+        edgeTypes={familyTreeEdgeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        fitView
+        fitViewOptions={{ padding: 0.15, duration: 0 }}
+        minZoom={0.2}
+        maxZoom={1.5}
+        nodesDraggable={true}
+        nodesConnectable={false}
+        elementsSelectable={true}
+        proOptions={{ hideAttribution: true }}
+        className="family-tree-react-flow"
+      >
+        <Controls />
+        <MiniMap />
+      </ReactFlow>
+    </ReactFlowProvider>
+  );
+}
+
 function FamilyTreePage() {
   const { profile } = useAuth();
   const { notify } = useNotification();
@@ -1996,7 +2033,7 @@ function FamilyTreePage() {
     const uids = new Set(directory.map((m) => m.uid));
     if (profile?.uid) uids.add(profile.uid);
     return Array.from(uids);
-  }, [directory, profile?.uid]);
+  }, [directory, profile]);
   const edgesMy = useMemo(
     () => relationships.filter((r) => nodeUidsMy.includes(r.fromUid) && nodeUidsMy.includes(r.toUid)),
     [relationships, nodeUidsMy],
@@ -2106,23 +2143,7 @@ function FamilyTreePage() {
       }));
   }, [edges, nodePositions]);
 
-  const [flowNodesState, setFlowNodesState] = useState<FlowNode[]>(flowNodes);
-  const [flowEdgesState, setFlowEdgesState] = useState<FlowEdge[]>(flowEdges);
-  useEffect(() => {
-    setFlowNodesState(flowNodes);
-    setFlowEdgesState(flowEdges);
-  }, [flowNodes, flowEdges]);
-
-  const onNodesChange = useCallback(
-    (changes: Parameters<typeof applyNodeChanges>[0]) =>
-      setFlowNodesState((nds) => applyNodeChanges(changes, nds)),
-    [],
-  );
-  const onEdgesChange = useCallback(
-    (changes: Parameters<typeof applyEdgeChanges>[0]) =>
-      setFlowEdgesState((eds) => applyEdgeChanges(changes, eds)),
-    [],
-  );
+  const flowTreeKey = `${viewMode}-${flowNodes.length}-${flowEdges.length}-${flowNodes.map((n) => n.id).sort().join(',')}`;
 
   if (!profile) return null;
 
@@ -2238,28 +2259,7 @@ function FamilyTreePage() {
           </button>
         </div>
         <div className="family-tree-graph" style={{ width: '100%', maxWidth: graphWidth, height: graphHeight }}>
-          <ReactFlowProvider>
-            <ReactFlow
-              nodes={flowNodesState}
-              edges={flowEdgesState}
-              nodeTypes={familyTreeNodeTypes}
-              edgeTypes={familyTreeEdgeTypes}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              fitView
-              fitViewOptions={{ padding: 0.15, duration: 0 }}
-              minZoom={0.2}
-              maxZoom={1.5}
-              nodesDraggable={true}
-              nodesConnectable={false}
-              elementsSelectable={true}
-              proOptions={{ hideAttribution: true }}
-              className="family-tree-react-flow"
-            >
-              <Controls />
-              <MiniMap />
-            </ReactFlow>
-          </ReactFlowProvider>
+          <FamilyTreeFlowChart key={flowTreeKey} flowNodes={flowNodes} flowEdges={flowEdges} />
         </div>
       </div>
       {treeModalOpen && (
@@ -2286,28 +2286,7 @@ function FamilyTreePage() {
               </button>
             </div>
             <div className="family-tree-modal-chart">
-              <ReactFlowProvider>
-                <ReactFlow
-                  nodes={flowNodesState}
-                  edges={flowEdgesState}
-                  nodeTypes={familyTreeNodeTypes}
-                  edgeTypes={familyTreeEdgeTypes}
-                  onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
-                  fitView
-                  fitViewOptions={{ padding: 0.15, duration: 0 }}
-                  minZoom={0.2}
-                  maxZoom={1.5}
-                  nodesDraggable={true}
-                  nodesConnectable={false}
-                  elementsSelectable={true}
-                  proOptions={{ hideAttribution: true }}
-                  className="family-tree-react-flow"
-                >
-                  <Controls />
-                  <MiniMap />
-                </ReactFlow>
-              </ReactFlowProvider>
+              <FamilyTreeFlowChart key={flowTreeKey} flowNodes={flowNodes} flowEdges={flowEdges} />
             </div>
           </div>
         </div>
@@ -2330,12 +2309,13 @@ const HelpPage = () => {
         <ul className="checklist">
           <li><strong>Profile</strong> — Confirm your name, photo, phone, and city from Google, and add a short family bio so others know who you are.</li>
           <li><strong>Registration</strong> — Enter attendee details, RSVP status, emergency contact, dietary and accessibility notes, and travel plans.</li>
-          <li><strong>Events</strong> — View the reunion schedule (venues, times). Organizers and admins can add or edit events.</li>
-          <li><strong>Hotels</strong> — See recommended stays, room blocks, booking links, and deadlines. Organizers maintain this list.</li>
-          <li><strong>Flights</strong> — Add your flight details (airline, times, airports) and attach boarding passes or confirmations. Flights are visible to your family group.</li>
+          <li><strong>Events</strong> — View the reunion schedule (venues, times). RSVP to events. Only organizers and admins can add, edit, or delete events.</li>
+          <li><strong>Hotels</strong> — See recommended stays, room blocks, booking links, and deadlines. Only organizers and admins can add, edit, or delete hotels.</li>
+          <li><strong>Flights</strong> — Add your flight details (airline, times, airports) and attach boarding passes or confirmations. Only organizers and admins can edit or delete flights; everyone can add their own.</li>
+          <li><strong>Family tree</strong> — Add relationships to other members (e.g. aunt, cousin). View <strong>My tree</strong> (you at the center) or <strong>Full family tree</strong>. Use <strong>Expand</strong> to open the map in a full-screen view.</li>
           <li><strong>Bulletin</strong> — Post announcements and discussions for the whole family. You can mention members, events, or documents and attach images.</li>
           <li><strong>Messages</strong> — Start direct threads with other members for private coordination.</li>
-          <li><strong>Files</strong> — Upload shared images and PDFs (e.g. photos, handouts). You can also attach files to specific events, hotels, or flights from their pages.</li>
+          <li><strong>Files</strong> — Upload shared images and PDFs. Only organizers and admins can delete files. You can also attach files to specific events, hotels, or flights from their pages.</li>
         </ul>
       </Card>
 
@@ -2350,7 +2330,14 @@ const HelpPage = () => {
         <Card>
           <SectionHeader title="Events, hotels & flights" meta="Logistics" />
           <p className="helper-text">
-            <strong>Events</strong> show the reunion timeline. <strong>Hotels</strong> list room blocks and booking links. In <strong>Flights</strong>, add your travel details and upload boarding passes or confirmations (images and PDFs, up to 5MB). Your flights are shared with members in your family group.
+            <strong>Events</strong> show the reunion timeline; you can RSVP (Attending / Maybe / Not attending). <strong>Hotels</strong> list room blocks and booking links. In <strong>Flights</strong>, add your travel details and upload boarding passes or confirmations (images and PDFs, up to 5MB). Your flights are shared with members in your family group. Only <strong>organizers and admins</strong> can add, edit, or delete events and hotels, and edit or delete any flight or file.
+          </p>
+        </Card>
+
+        <Card>
+          <SectionHeader title="Family tree" meta="Relationships and connections" />
+          <p className="helper-text">
+            Add relationships (e.g. parent, spouse, aunt, cousin) between you and other members. <strong>My tree</strong> shows you at the center with your connections; <strong>Full family tree</strong> shows everyone. The map shows profile photos or initials and relationship labels on the lines. Use <strong>Expand</strong> to open the map in a full-screen modal for large family maps. You can edit or remove only relationships you created; admins can edit any.
           </p>
         </Card>
 
@@ -2364,7 +2351,7 @@ const HelpPage = () => {
         <Card>
           <SectionHeader title="Files & attachments" meta="Shared documents and images" />
           <p className="helper-text">
-            The <strong>Files</strong> page is for general uploads (images and PDFs). You can also attach files to a specific event, hotel, or flight from their cards on the Events, Hotels, and Flights pages. All uploads are visible to approved members.
+            The <strong>Files</strong> page is for general uploads (images and PDFs). You can also attach files to a specific event, hotel, or flight from their cards on the Events, Hotels, and Flights pages. All uploads are visible to approved members. Only <strong>organizers and admins</strong> can delete files.
           </p>
         </Card>
       </div>
