@@ -19,6 +19,7 @@ import { startTransition, useEffect, useMemo, useState } from 'react';
 import {
   demoAssets,
   demoComments,
+  demoEventRsvps,
   demoEvents,
   demoFlights,
   demoHotels,
@@ -37,9 +38,11 @@ import type {
   BulletinPost,
   DirectoryMember,
   EventItem,
+  EventRsvp,
   Flight,
   Hotel,
   Registration,
+  RSVPStatus,
   Thread,
   ThreadMessage,
   UserProfile,
@@ -322,6 +325,53 @@ export const createEvent = async (payload: Omit<EventItem, 'id'>) => {
     ...payload,
     createdAt: serverTimestamp(),
   });
+};
+
+export const useEventRsvps = (eventId: string) => {
+  const fallback = useMemo(
+    () => demoEventRsvps.filter((r) => r.eventId === eventId),
+    [eventId],
+  );
+  return useDemoOrLive<EventRsvp[]>(
+    fallback,
+    useMemo(
+      () =>
+        db && eventId
+          ? (setData: (value: EventRsvp[]) => void) =>
+              subscribeCollection<EventRsvp>(
+                'eventRsvps',
+                [where('eventId', '==', eventId)],
+                setData,
+              )
+          : undefined,
+      [eventId],
+    ),
+  );
+};
+
+export const setEventRsvp = async (
+  userId: string,
+  eventId: string,
+  displayName: string,
+  status: RSVPStatus,
+) => {
+  if (!db) {
+    return;
+  }
+
+  const docId = `${userId}_${eventId}`;
+  await setDoc(
+    doc(db!, 'eventRsvps', docId),
+    {
+      id: docId,
+      userId,
+      eventId,
+      displayName,
+      status,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
 };
 
 export const createHotel = async (payload: Omit<Hotel, 'id'>) => {

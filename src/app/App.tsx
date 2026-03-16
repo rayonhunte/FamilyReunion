@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { useNotification } from '../contexts/NotificationContext';
 import { useAuth } from '../hooks/useAuth';
 import { callBackend } from '../lib/functionsApi';
 import {
@@ -13,6 +14,7 @@ import {
   deleteStorageFile,
   saveRegistration,
   sendThreadMessage,
+  setEventRsvp,
   updateBulletinPost,
   updateProfileFields,
   uploadAsset,
@@ -23,6 +25,7 @@ import {
   useBulletinComments,
   useBulletinPosts,
   useDirectory,
+  useEventRsvps,
   useEvents,
   useFlights,
   useHotels,
@@ -41,6 +44,7 @@ import type {
   Hotel,
   Registration,
   Role,
+  RSVPStatus,
 } from '../types/models';
 
 const mentionToken = ({
@@ -115,7 +119,8 @@ export const App = () => {
           </ProtectedRoute>
         }
       />
-      <Route path="*" element={<Navigate to={user ? '/app' : '/'} replace />} />
+      <Route path="/404" element={<NotFoundPage />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 };
@@ -144,6 +149,32 @@ const FullscreenState = ({ title, description }: { title: string; description: s
     </div>
   </main>
 );
+
+const NotFoundPage = () => {
+  const { user, profile } = useAuth();
+
+  return (
+    <main className="not-found-shell">
+      <div className="not-found-card">
+        <p className="eyebrow">Family Reunion Portal</p>
+        <h1>Page not found</h1>
+        <p className="not-found-description">
+          The page you’re looking for doesn’t exist or has been moved.
+        </p>
+        <img
+          src="/404_page.png"
+          alt="Person searching with a magnifying glass next to a 404 sign in the jungle"
+          className="not-found-image"
+        />
+        <div className="not-found-actions">
+          <Link to={user && profile?.status === 'approved' ? '/app' : '/'} className="cta-button">
+            {user && profile?.status === 'approved' ? 'Back to portal' : 'Back to home'}
+          </Link>
+        </div>
+      </div>
+    </main>
+  );
+};
 
 const LandingPage = () => {
   const { profile, signInWithGoogle, error, isDemoMode } = useAuth();
@@ -348,14 +379,13 @@ const OverviewPage = () => {
 
 const ProfilePage = () => {
   const { profile, user } = useAuth();
+  const { notify } = useNotification();
   const [form, setForm] = useState({
     displayName: profile?.displayName ?? user?.displayName ?? '',
     phone: profile?.phone ?? user?.phoneNumber ?? '',
     city: profile?.city ?? '',
     bio: profile?.bio ?? '',
   });
-  const [status, setStatus] = useState('');
-  const [uploadStatus, setUploadStatus] = useState('');
 
   if (!profile || !user) {
     return null;
@@ -363,14 +393,13 @@ const ProfilePage = () => {
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setStatus('Saving profile...');
     await updateProfileFields(profile.uid, {
       displayName: form.displayName.trim() || user.displayName || profile.displayName,
       phone: form.phone.trim(),
       city: form.city.trim(),
       bio: form.bio.trim(),
     });
-    setStatus('Profile saved.');
+    notify('Profile saved.', 'saved');
   };
 
   const onProfileImageChange = async (event: FormEvent<HTMLInputElement>) => {
@@ -379,9 +408,8 @@ const ProfilePage = () => {
       return;
     }
 
-    setUploadStatus('Uploading profile image...');
     await uploadProfileImage(profile.uid, file);
-    setUploadStatus('Profile image updated.');
+    notify('Profile image updated.', 'updated');
     event.currentTarget.value = '';
   };
 
@@ -500,7 +528,6 @@ const ProfilePage = () => {
                 Save profile
               </button>
             </div>
-            {status ? <p className="helper-text full-span">{status}</p> : null}
           </form>
         </Card>
 
@@ -522,7 +549,6 @@ const ProfilePage = () => {
               <p className="helper-text">
                 Upload a JPG or PNG to replace the photo shown on your member profile and throughout the portal.
               </p>
-              {uploadStatus ? <p className="helper-text">{uploadStatus}</p> : null}
             </div>
           </div>
         </Card>
@@ -533,13 +559,13 @@ const ProfilePage = () => {
 
 const RegistrationPage = () => {
   const { profile } = useAuth();
+  const { notify } = useNotification();
   const { data: registration, loading } = useUserRegistration(
     profile?.uid ?? '',
     profile?.email ?? '',
     profile?.displayName ?? '',
   );
   const [form, setForm] = useState<Registration>(registration);
-  const [status, setStatus] = useState<string>('');
 
   useEffect(() => {
     setForm(registration);
@@ -551,7 +577,6 @@ const RegistrationPage = () => {
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setStatus('Saving registration...');
     await saveRegistration(profile.uid, form);
     await updateProfileFields(profile.uid, {
       displayName: profile.displayName,
@@ -559,7 +584,7 @@ const RegistrationPage = () => {
       city: form.city,
       phone: form.phone,
     });
-    setStatus('Registration saved.');
+    notify('Registration saved.', 'saved');
   };
 
   return (
@@ -634,7 +659,6 @@ const RegistrationPage = () => {
             <button className="cta-button" type="submit" disabled={loading}>
               Save registration
             </button>
-            {status ? <span className="helper-text">{status}</span> : null}
           </div>
         </form>
       </Card>
@@ -644,6 +668,7 @@ const RegistrationPage = () => {
 
 const EventsPage = () => {
   const { profile } = useAuth();
+  const { notify } = useNotification();
   const { data: events } = useEvents();
   const [form, setForm] = useState({
     title: '',
@@ -670,6 +695,7 @@ const EventsPage = () => {
     } as Omit<EventItem, 'id'>);
 
     setForm({ title: '', description: '', venue: '', startAt: '', endAt: '' });
+    notify('Event published.', 'saved');
   };
 
   return (
@@ -732,6 +758,7 @@ const EventsPage = () => {
 
 const HotelsPage = () => {
   const { profile } = useAuth();
+  const { notify } = useNotification();
   const { data: hotels } = useHotels();
   const [form, setForm] = useState({
     name: '',
@@ -759,6 +786,7 @@ const HotelsPage = () => {
       rateNotes: '',
       deadline: '',
     });
+    notify('Hotel saved.', 'saved');
   };
 
   return (
@@ -833,6 +861,7 @@ const HotelsPage = () => {
 
 const FlightsPage = () => {
   const { profile } = useAuth();
+  const { notify } = useNotification();
   const { data: flights } = useFlights();
   const [form, setForm] = useState({
     airline: '',
@@ -845,7 +874,6 @@ const FlightsPage = () => {
     notes: '',
     confirmationCode: '',
   });
-  const [status, setStatus] = useState('');
 
   if (!profile) {
     return null;
@@ -857,7 +885,6 @@ const FlightsPage = () => {
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setStatus('Saving flight...');
     await createFlight({
       ownerUid: profile.uid,
       ownerName: form.travelerName.trim() || profile.displayName,
@@ -871,7 +898,7 @@ const FlightsPage = () => {
       notes: form.notes.trim() || undefined,
       confirmationCode: form.confirmationCode.trim() || undefined,
     });
-    setStatus('Flight saved.');
+    notify('Flight saved.', 'saved');
     setForm({
       airline: '',
       flightNumber: '',
@@ -987,7 +1014,6 @@ const FlightsPage = () => {
               <button className="cta-button" type="submit">
                 Save flight
               </button>
-              {status ? <span className="helper-text">{status}</span> : null}
             </div>
           </form>
         </Card>
@@ -1043,6 +1069,7 @@ const FlightAssetCard = ({
 
 const BulletinPage = () => {
   const { profile } = useAuth();
+  const { notify } = useNotification();
   const { data: posts } = useBulletinPosts();
   const { data: comments } = useBulletinComments();
   const { data: directory } = useDirectory();
@@ -1090,6 +1117,7 @@ const BulletinPage = () => {
 
     setNewPost('');
     setBulletinImage(null);
+    notify('Post published.', 'saved');
   };
 
   const submitComment = async (event: FormEvent<HTMLFormElement>, post: BulletinPost) => {
@@ -1107,6 +1135,7 @@ const BulletinPage = () => {
     });
 
     setNewComments((current) => ({ ...current, [post.id]: '' }));
+    notify('Comment added.', 'saved');
   };
 
   const startEditing = (post: BulletinPost) => {
@@ -1135,6 +1164,7 @@ const BulletinPage = () => {
     setEditingPostId(null);
     setEditingBody('');
     setEditingImage(null);
+    notify('Post updated.', 'updated');
   };
 
   const removePostImage = async (post: BulletinPost) => {
@@ -1149,6 +1179,10 @@ const BulletinPage = () => {
       attachmentContentType: '',
       attachmentKind: undefined,
     });
+    setEditingPostId(null);
+    setEditingBody('');
+    setEditingImage(null);
+    notify('Image removed from post.', 'deleted');
   };
 
   return (
@@ -1331,6 +1365,7 @@ const BulletinPage = () => {
 
 const MessagesPage = () => {
   const { profile } = useAuth();
+  const { notify } = useNotification();
   const { data: directory } = useDirectory();
   const { data: threads } = useThreads(profile?.uid ?? '');
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
@@ -1385,6 +1420,7 @@ const MessagesPage = () => {
       selectedThread.participantNames,
     );
     setMessageText('');
+    notify('Message sent.', 'saved');
   };
 
   return (
@@ -1459,8 +1495,8 @@ const MessagesPage = () => {
 
 const FilesPage = () => {
   const { profile } = useAuth();
+  const { notify } = useNotification();
   const { data: assets } = useAssets();
-  const [uploadStatus, setUploadStatus] = useState('');
 
   if (!profile) {
     return null;
@@ -1473,9 +1509,8 @@ const FilesPage = () => {
     }
 
     const kind = file.type === 'application/pdf' ? 'document' : 'image';
-    setUploadStatus('Uploading file...');
     await uploadAsset({ file, kind, ownerUid: profile.uid, ownerName: profile.displayName });
-    setUploadStatus('Upload complete.');
+    notify('File uploaded.', 'saved');
     event.currentTarget.value = '';
   };
 
@@ -1489,7 +1524,6 @@ const FilesPage = () => {
             <span>Select an image or PDF</span>
             <input accept="image/*,application/pdf" onChange={(event) => void onFileChange(event)} type="file" />
           </label>
-          {uploadStatus ? <p className="helper-text">{uploadStatus}</p> : null}
         </Card>
 
         <Card>
@@ -1586,7 +1620,21 @@ const EventAssetCard = ({
   ownerName: string;
 }) => {
   const { data: assets } = useAssociatedAssets('event', eventItem.id);
+  const { data: rsvps } = useEventRsvps(eventItem.id);
+  const { notify } = useNotification();
   const [previewAsset, setPreviewAsset] = useState<AssetRecord | null>(null);
+
+  const myRsvp = rsvps.find((r) => r.userId === ownerUid);
+  const attendingCount = rsvps.filter((r) => r.status === 'attending').length;
+  const maybeCount = rsvps.filter((r) => r.status === 'maybe').length;
+
+  const onRsvpChange = async (status: RSVPStatus) => {
+    await setEventRsvp(ownerUid, eventItem.id, ownerName, status);
+    notify(
+      status === 'attending' ? 'You’re attending this event.' : status === 'maybe' ? 'Marked as maybe.' : 'RSVP updated.',
+      'saved',
+    );
+  };
 
   return (
     <>
@@ -1599,6 +1647,31 @@ const EventAssetCard = ({
         <div className="timeline-meta">
           <strong>{eventItem.venue}</strong>
           <span>{formatDateTime(eventItem.startAt)}</span>
+        </div>
+        <div className="event-rsvp-row">
+          <label className="event-rsvp-label">
+            <span className="helper-text">Your RSVP</span>
+            <select
+              value={myRsvp?.status ?? ''}
+              onChange={(e) => {
+                const v = e.target.value as RSVPStatus | '';
+                if (v) void onRsvpChange(v);
+              }}
+              aria-label={`RSVP for ${eventItem.title}`}
+            >
+              <option value="">—</option>
+              <option value="attending">Attending</option>
+              <option value="maybe">Maybe</option>
+              <option value="not-attending">Not attending</option>
+            </select>
+          </label>
+          {(attendingCount > 0 || maybeCount > 0) && (
+            <span className="event-rsvp-counts helper-text">
+              {attendingCount > 0 && `${attendingCount} attending`}
+              {attendingCount > 0 && maybeCount > 0 && ', '}
+              {maybeCount > 0 && `${maybeCount} maybe`}
+            </span>
+          )}
         </div>
         <AssociatedAssetSection
           title="Event attachments"
@@ -1684,8 +1757,8 @@ const AssociatedAssetSection = ({
   ownerName: string;
   onPreview: (asset: AssetRecord | null) => void;
 }) => {
+  const { notify } = useNotification();
   const [description, setDescription] = useState('');
-  const [status, setStatus] = useState('');
   const maxFileSizeBytes = 5 * 1024 * 1024; // 5MB
 
   const onFileChange = async (event: FormEvent<HTMLInputElement>) => {
@@ -1695,13 +1768,12 @@ const AssociatedAssetSection = ({
     }
 
     if (file.size > maxFileSizeBytes) {
-      setStatus('Please upload files smaller than 5MB (images or PDFs).');
+      notify('Please upload files smaller than 5MB (images or PDFs).', 'error');
       event.currentTarget.value = '';
       return;
     }
 
     const kind = file.type === 'application/pdf' ? 'document' : 'image';
-    setStatus('Uploading file...');
     await uploadAsset({
       file,
       kind,
@@ -1713,14 +1785,13 @@ const AssociatedAssetSection = ({
       relatedLabel,
     });
     setDescription('');
-    setStatus('Upload complete.');
+    notify('Attachment uploaded.', 'saved');
     event.currentTarget.value = '';
   };
 
   const onDelete = async (asset: AssetRecord) => {
-    setStatus('Deleting file...');
     await deleteAsset(asset);
-    setStatus('File removed.');
+    notify('File removed.', 'deleted');
   };
 
   return (
@@ -1740,7 +1811,6 @@ const AssociatedAssetSection = ({
             <span>Upload image or PDF for {relatedLabel}</span>
             <input accept="image/*,application/pdf" onChange={(event) => void onFileChange(event)} type="file" />
           </label>
-          {status ? <p className="helper-text">{status}</p> : null}
         </div>
       ) : null}
       <div className="asset-grid">
@@ -1820,10 +1890,10 @@ const AssetPreviewModal = ({
 
 const AdminPage = () => {
   const { profile, user, isDemoMode } = useAuth();
+  const { notify } = useNotification();
   const { data: pendingUsers } = usePendingApprovals();
   const { data: directory } = useDirectory();
   const [inviteLink, setInviteLink] = useState('');
-  const [statusMessage, setStatusMessage] = useState('');
 
   if (!profile || !user) {
     return null;
@@ -1831,7 +1901,7 @@ const AdminPage = () => {
 
   const withToken = async <T,>(callback: (token: string) => Promise<T>) => {
     if (isDemoMode) {
-      setStatusMessage('Demo mode active. Connect Firebase Functions to run admin actions.');
+      notify('Demo mode active. Connect Firebase Functions to run admin actions.', 'error');
       return null;
     }
 
@@ -1840,26 +1910,23 @@ const AdminPage = () => {
   };
 
   const approveMember = async (uid: string, role: Role = 'member') => {
-    setStatusMessage('Approving member...');
     await withToken((token) => callBackend(token, 'approveUser', { uid, role }));
-    setStatusMessage('Member approved.');
+    notify('Member approved.', 'saved');
   };
 
   const createInvite = async () => {
-    setStatusMessage('Creating invite...');
     const response = await withToken<{ inviteUrl: string }>((token) =>
       callBackend(token, 'createInvite', { expiresInDays: 14 }),
     );
     if (response?.inviteUrl) {
       setInviteLink(response.inviteUrl);
     }
-    setStatusMessage('Invite link created.');
+    notify('Invite link created.', 'saved');
   };
 
   const changeRole = async (uid: string, role: Role) => {
-    setStatusMessage('Updating role...');
     await withToken((token) => callBackend(token, 'changeRole', { uid, role }));
-    setStatusMessage('Role updated.');
+    notify('Role updated.', 'updated');
   };
 
   return (
@@ -1898,7 +1965,6 @@ const AdminPage = () => {
               </a>
             ) : null}
           </div>
-          {statusMessage ? <p className="helper-text">{statusMessage}</p> : null}
         </Card>
 
         <Card className="full-grid">

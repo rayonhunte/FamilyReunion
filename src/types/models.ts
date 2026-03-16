@@ -67,6 +67,15 @@ export interface EventItem {
   createdBy: string;
 }
 
+export interface EventRsvp {
+  id: string;
+  userId: string;
+  eventId: string;
+  displayName: string;
+  status: RSVPStatus;
+  updatedAt?: unknown;
+}
+
 export interface Hotel {
   id: string;
   name: string;

@@ -519,6 +519,30 @@ p {
   justify-items: start;
 }
 
+.event-rsvp-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.event-rsvp-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.event-rsvp-label select {
+  width: auto;
+  min-width: 10rem;
+}
+
+.event-rsvp-counts {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -725,6 +749,69 @@ p {
   padding: 1.2rem;
 }
 
+/* Notification modal (saved / updated / deleted) – matches panel-card style */
+.notification-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(38, 28, 21, 0.52);
+  backdrop-filter: blur(6px);
+}
+
+.notification-modal {
+  width: min(420px, 100%);
+  border-radius: 32px;
+  border: 1px solid var(--border);
+  background: var(--paper-strong);
+  box-shadow: var(--shadow);
+  padding: 1.5rem 1.6rem;
+}
+
+.notification-modal-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.notification-modal-title {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ink);
+}
+
+.notification-modal--saved .notification-modal-title {
+  color: #2d6a3e;
+}
+
+.notification-modal--updated .notification-modal-title {
+  color: var(--accent-strong);
+}
+
+.notification-modal--deleted .notification-modal-title {
+  color: var(--muted);
+}
+
+.notification-modal--error .notification-modal-title {
+  color: #9c4329;
+}
+
+.notification-modal-message {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.notification-modal-dismiss {
+  margin-top: 0.5rem;
+  align-self: flex-start;
+}
+
 .asset-modal-body {
   margin-top: 1rem;
 }
@@ -752,6 +839,101 @@ p {
 .fullscreen-shell {
   display: grid;
   padding: 1.5rem;
+}
+
+/* 404 Page not found */
+.not-found-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.not-found-card {
+  max-width: 560px;
+  width: 100%;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(22px);
+  border-radius: 32px;
+  padding: 2rem;
+  text-align: center;
+}
+
+.not-found-card .eyebrow {
+  margin-bottom: 0.5rem;
+}
+
+.not-found-card h1 {
+  margin-bottom: 0.5rem;
+}
+
+.not-found-description {
+  color: var(--muted);
+  margin-bottom: 1.5rem;
+}
+
+.not-found-image {
+  width: 100%;
+  height: auto;
+  border-radius: 20px;
+  margin-bottom: 1.5rem;
+  display: block;
+}
+
+.not-found-actions {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+/* Error boundary (something went wrong) */
+.error-boundary-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.error-boundary-card {
+  max-width: 560px;
+  width: 100%;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(22px);
+  border-radius: 32px;
+  padding: 2rem;
+  text-align: center;
+}
+
+.error-boundary-card .eyebrow {
+  margin-bottom: 0.5rem;
+}
+
+.error-boundary-card h1 {
+  margin-bottom: 0.5rem;
+}
+
+.error-boundary-description {
+  color: var(--muted);
+  margin-bottom: 1.5rem;
+}
+
+.error-boundary-image {
+  width: 100%;
+  height: auto;
+  border-radius: 20px;
+  margin-bottom: 1.5rem;
+  display: block;
+}
+
+.error-boundary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
 }
 
 @media (max-width: 1240px) {

@@ -4,6 +4,7 @@ import type {
   BulletinPost,
   DirectoryMember,
   EventItem,
+  EventRsvp,
   Flight,
   Hotel,
   Registration,
@@ -88,6 +89,13 @@ export const demoEvents: EventItem[] = [
     visibility: 'members',
     createdBy: 'maya-james',
   },
+];
+
+export const demoEventRsvps: EventRsvp[] = [
+  { id: 'demo-admin_welcome-dinner', userId: 'demo-admin', eventId: 'welcome-dinner', displayName: 'Reunion Admin', status: 'attending', updatedAt: '2026-03-10T12:00:00.000Z' },
+  { id: 'maya-james_welcome-dinner', userId: 'maya-james', eventId: 'welcome-dinner', displayName: 'Maya James', status: 'attending', updatedAt: '2026-03-10T12:00:00.000Z' },
+  { id: 'rohan-bacchus_welcome-dinner', userId: 'rohan-bacchus', eventId: 'welcome-dinner', displayName: 'Rohan Bacchus', status: 'maybe', updatedAt: '2026-03-10T12:00:00.000Z' },
+  { id: 'demo-admin_heritage-brunch', userId: 'demo-admin', eventId: 'heritage-brunch', displayName: 'Reunion Admin', status: 'attending', updatedAt: '2026-03-10T12:00:00.000Z' },
 ];
 
 export const demoFlights: Flight[] = [
