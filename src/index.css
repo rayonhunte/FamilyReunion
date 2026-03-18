@@ -167,6 +167,122 @@ p {
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex-shrink: 0;
+}
+
+.portal-nav-primary {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  flex: 1;
+  min-width: 0;
+}
+
+.portal-nav-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.65rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.55);
+  color: rgba(75, 55, 41, 0.92);
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 180ms ease, transform 180ms ease;
+}
+
+.portal-nav-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.85);
+  transform: translateY(-1px);
+}
+
+.portal-nav-menu-icon {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 18px;
+}
+
+.portal-nav-menu-icon span {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(75, 55, 41, 0.75);
+}
+
+.portal-nav-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: rgba(38, 28, 21, 0.35);
+  backdrop-filter: blur(2px);
+}
+
+.portal-nav-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 46;
+  width: min(20rem, 92vw);
+  max-width: 100%;
+  background: var(--paper-strong);
+  border-right: 1px solid var(--border);
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  animation: portal-drawer-in 200ms ease-out;
+}
+
+@keyframes portal-drawer-in {
+  from {
+    transform: translateX(-100%);
+    opacity: 0.9;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.portal-nav-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.portal-nav-drawer-title {
+  font-family: var(--font-fraunces, 'Fraunces', Georgia, serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.portal-nav-drawer-links {
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem;
+  gap: 0.25rem;
+  overflow-y: auto;
+}
+
+.portal-nav-drawer-links a {
+  display: block;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  color: rgba(75, 55, 41, 0.92);
+  font-weight: 500;
+  transition: background 160ms ease;
+}
+
+.portal-nav-drawer-links a:hover,
+.portal-nav-drawer-links a.active {
+  background: rgba(255, 255, 255, 0.75);
 }
 
 .hero-card {
@@ -668,6 +784,11 @@ p {
   min-height: 140px;
 }
 
+.upload-card.is-disabled {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
 .attachment-card {
   gap: 1rem;
 }
@@ -977,6 +1098,12 @@ p {
     overflow-x: auto;
     flex-wrap: nowrap;
     padding-bottom: 0.2rem;
+  }
+
+  .portal-nav-primary {
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
   }
 
   .portal-nav a {

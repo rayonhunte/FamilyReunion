@@ -7,10 +7,17 @@ import { NotificationProvider } from './contexts/NotificationContext';
 import { AuthProvider } from './hooks/useAuth';
 import './index.css';
 
+// Service worker uses cache-first; on dev that mixes stale JS with Vite → invalid hook call / duplicate React.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    void navigator.serviceWorker.register('/sw.js');
-  });
+  if (import.meta.env.PROD) {
+    window.addEventListener('load', () => {
+      void navigator.serviceWorker.register('/sw.js');
+    });
+  } else {
+    void navigator.serviceWorker.getRegistrations().then((regs) => {
+      regs.forEach((r) => void r.unregister());
+    });
+  }
 }
 
 createRoot(document.getElementById('root')!).render(

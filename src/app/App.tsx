@@ -100,9 +100,14 @@ const parseMentionSegments = (text: string) => {
   return segments;
 };
 
-const navItems = [
+const primaryNavItems: { label: string; to: string; roles?: ('admin' | 'organizer')[] }[] = [
   { label: 'Dashboard', to: '/app' },
   { label: 'Profile', to: '/app/profile' },
+  { label: 'Organizer', to: '/app/organizer', roles: ['admin', 'organizer'] },
+  { label: 'Admin', to: '/app/admin', roles: ['admin'] },
+];
+
+const menuNavItems: { label: string; to: string; adminOnly?: boolean }[] = [
   { label: 'Registration', to: '/app/registration' },
   { label: 'Events', to: '/app/events' },
   { label: 'Hotels', to: '/app/hotels' },
@@ -112,8 +117,7 @@ const navItems = [
   { label: 'Files', to: '/app/files' },
   { label: 'Family tree', to: '/app/family-tree' },
   { label: 'Help', to: '/app/help' },
-  { label: 'Audit log', to: '/app/audit' },
-  { label: 'Admin', to: '/app/admin' },
+  { label: 'Audit log', to: '/app/audit', adminOnly: true },
 ];
 
 export const App = () => {
@@ -286,7 +290,35 @@ const PendingPage = () => {
 
 const PortalShell = () => {
   const { profile, signOutUser, isDemoMode } = useAuth();
-  const canAccessAdminPanel = profile?.role === 'admin' || profile?.role === 'organizer';
+  const location = useLocation();
+  const isAdmin = profile?.role === 'admin';
+  const isOrganizer = profile?.role === 'organizer';
+  const canAccessOrganizerHub = isAdmin || isOrganizer;
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  /* Close drawer when route changes (browser back, etc.) */
+  useEffect(() => {
+    const t = requestAnimationFrame(() => setMenuOpen(false));
+    return () => cancelAnimationFrame(t);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: Event) => {
+      if ((e as unknown as { key: string }).key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
+
+  const visiblePrimary = primaryNavItems.filter((item) => {
+    if (!item.roles?.length) return true;
+    if (isAdmin && item.roles.includes('admin')) return true;
+    if (isOrganizer && item.roles.includes('organizer')) return true;
+    return false;
+  });
+
+  const visibleMenu = menuNavItems.filter((item) => !item.adminOnly || isAdmin);
 
   return (
     <div className="portal-page">
@@ -295,22 +327,26 @@ const PortalShell = () => {
           <p className="eyebrow">Family Reunion</p>
           <h2>Member Portal</h2>
         </div>
-        <nav className="hero-nav portal-nav">
-          {navItems
-            .filter((item) => {
-              if (item.to === '/app/audit') {
-                return profile?.role === 'admin';
-              }
-              if (item.to === '/app/admin') {
-                return canAccessAdminPanel;
-              }
-              return true;
-            })
-            .map((item) => (
-              <NavLink key={item.to} to={item.to} end={item.to === '/app'}>
-                {item.label}
-              </NavLink>
-            ))}
+        <nav className="hero-nav portal-nav portal-nav-primary" aria-label="Main navigation">
+          <button
+            type="button"
+            className="portal-nav-menu-btn"
+            aria-expanded={menuOpen}
+            aria-controls="portal-nav-menu"
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            <span className="portal-nav-menu-icon" aria-hidden>
+              <span />
+              <span />
+              <span />
+            </span>
+          </button>
+          {visiblePrimary.map((item) => (
+            <NavLink key={item.to} to={item.to} end={item.to === '/app'}>
+              {item.label}
+            </NavLink>
+          ))}
         </nav>
         <div className="portal-actions">
           <div>
@@ -323,6 +359,39 @@ const PortalShell = () => {
           </button>
         </div>
       </header>
+
+      {menuOpen ? (
+        <>
+          <div
+            className="portal-nav-backdrop"
+            onClick={() => setMenuOpen(false)}
+            onKeyDown={(e) => e.key === 'Escape' && setMenuOpen(false)}
+            role="presentation"
+            aria-hidden
+          />
+          <div
+            id="portal-nav-menu"
+            className="portal-nav-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="More pages"
+          >
+            <div className="portal-nav-drawer-head">
+              <span className="portal-nav-drawer-title">More</span>
+              <button type="button" className="ghost-button" onClick={() => setMenuOpen(false)}>
+                Close
+              </button>
+            </div>
+            <nav className="portal-nav-drawer-links" aria-label="Additional navigation">
+              {visibleMenu.map((item) => (
+                <NavLink key={item.to} to={item.to} onClick={() => setMenuOpen(false)}>
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
+          </div>
+        </>
+      ) : null}
 
       <main className="content-shell portal-content">
         <Routes>
@@ -337,8 +406,9 @@ const PortalShell = () => {
           <Route path="files" element={<FilesPage />} />
           <Route path="family-tree" element={<FamilyTreePage />} />
           <Route path="help" element={<HelpPage />} />
-          <Route path="audit" element={profile?.role === 'admin' ? <AuditPage /> : <Navigate to="/app" replace />} />
-          <Route path="admin" element={canAccessAdminPanel ? <AdminPage /> : <Navigate to="/app" replace />} />
+          <Route path="audit" element={isAdmin ? <AuditPage /> : <Navigate to="/app" replace />} />
+          <Route path="organizer" element={canAccessOrganizerHub ? <OrganizerPage /> : <Navigate to="/app" replace />} />
+          <Route path="admin" element={isAdmin ? <AdminPage /> : <Navigate to="/app" replace />} />
         </Routes>
       </main>
     </div>
@@ -409,9 +479,24 @@ const OverviewPage = () => {
   );
 };
 
+const profileImageUploadError = (err: unknown): string => {
+  const code =
+    err && typeof err === 'object' && 'code' in err
+      ? String((err as { code?: string }).code)
+      : '';
+  if (code === 'storage/unauthorized') {
+    return 'Photo upload was denied. Deploy the latest Storage rules (`firebase deploy --only storage`) or use a JPG/PNG under 5MB.';
+  }
+  if (code === 'permission-denied') {
+    return 'Could not save photo URL to your profile. Check Firestore rules.';
+  }
+  return err instanceof Error ? err.message : 'Photo upload failed.';
+};
+
 const ProfilePage = () => {
   const { profile, user } = useAuth();
   const { notify } = useNotification();
+  const [imageUploading, setImageUploading] = useState(false);
   const [form, setForm] = useState({
     displayName: profile?.displayName ?? user?.displayName ?? '',
     phone: profile?.phone ?? user?.phoneNumber ?? '',
@@ -439,10 +524,17 @@ const ProfilePage = () => {
     if (!file) {
       return;
     }
-
-    await uploadProfileImage(profile.uid, file);
-    notify('Profile image updated.', 'updated');
-    event.currentTarget.value = '';
+    const input = event.currentTarget;
+    setImageUploading(true);
+    try {
+      await uploadProfileImage(profile.uid, file);
+      notify('Profile photo saved.', 'updated');
+    } catch (err) {
+      notify(profileImageUploadError(err), 'error');
+    } finally {
+      setImageUploading(false);
+      input.value = '';
+    }
   };
 
   const firstName = (profile.displayName || user.displayName || 'Family').split(' ')[0];
@@ -574,12 +666,18 @@ const ProfilePage = () => {
               </div>
             )}
             <div className="profile-upload-box">
-              <label className="upload-card compact-upload">
-                <span>Upload profile image</span>
-                <input accept="image/*" onChange={(event) => void onProfileImageChange(event)} type="file" />
+              <label className={`upload-card compact-upload${imageUploading ? ' is-disabled' : ''}`}>
+                <span>{imageUploading ? 'Uploading…' : 'Upload profile image'}</span>
+                <input
+                  accept="image/*"
+                  disabled={imageUploading}
+                  onChange={(event) => void onProfileImageChange(event)}
+                  type="file"
+                />
               </label>
               <p className="helper-text">
-                Upload a JPG or PNG to replace the photo shown on your member profile and throughout the portal.
+                Chooses a file and saves automatically to your profile (no need to click Save profile). JPG or PNG,
+                max 5MB.
               </p>
             </div>
           </div>
@@ -1410,7 +1508,7 @@ const BulletinPage = () => {
                     <strong>{post.authorName}</strong>
                     <p>{relativeTime(post.createdAt)}</p>
                   </div>
-                  {(post.authorUid === profile.uid || profile.role === 'admin') ? (
+                  {(post.authorUid === profile.uid || profile.role === 'admin' || profile.role === 'organizer') ? (
                     <span className="stack-row">
                       <button className="ghost-button" onClick={() => startEditing(post)} type="button">
                         Edit
@@ -2426,6 +2524,7 @@ const HelpPage = () => {
           <li><strong>Bulletin</strong> — Post announcements and discussions for the whole family. You can mention members, events, or documents and attach images.</li>
           <li><strong>Messages</strong> — Start direct threads with other members for private coordination.</li>
           <li><strong>Files</strong> — Upload shared images and PDFs. Only organizers and admins can delete files. You can also attach files to specific events, hotels, or flights from their pages.</li>
+          <li><strong>Organizer</strong> — Organizers and admins can open the <strong>Organizer</strong> hub for invite links and shortcuts. The <strong>Admin</strong> page is for approvals and roles (admins only).</li>
         </ul>
       </Card>
 
@@ -2501,11 +2600,15 @@ const EventAssetCard = ({
   const maybeCount = rsvps.filter((r) => r.status === 'maybe').length;
 
   const onRsvpChange = async (status: RSVPStatus) => {
-    await setEventRsvp(ownerUid, eventItem.id, ownerName, status);
-    notify(
-      status === 'attending' ? 'You’re attending this event.' : status === 'maybe' ? 'Marked as maybe.' : 'RSVP updated.',
-      'saved',
-    );
+    try {
+      await setEventRsvp(ownerUid, eventItem.id, ownerName, status);
+      notify(
+        status === 'attending' ? 'You’re attending this event.' : status === 'maybe' ? 'Marked as maybe.' : 'RSVP updated.',
+        'saved',
+      );
+    } catch {
+      notify('Could not save your RSVP. If this keeps happening, ask an organizer to deploy the latest Firestore rules.', 'error');
+    }
   };
 
   const startEdit = () => {
@@ -2915,15 +3018,62 @@ const AuditPage = () => {
   );
 };
 
-const AdminPage = () => {
-  const { profile, user, isDemoMode } = useAuth();
+const PendingApprovalsCard = () => {
+  const { user, isDemoMode } = useAuth();
   const { notify } = useNotification();
   const { data: pendingUsers } = usePendingApprovals();
-  const { data: directory } = useDirectory();
-  const [inviteLink, setInviteLink] = useState('');
-  const canManageUsers = profile?.role === 'admin';
 
-  if (!profile || !user) {
+  if (!user) {
+    return null;
+  }
+
+  const withToken = async <T,>(callback: (token: string) => Promise<T>) => {
+    if (isDemoMode) {
+      notify('Demo mode active. Connect Firebase Functions to approve members.', 'error');
+      return null;
+    }
+    const token = await user.getIdToken();
+    return callback(token);
+  };
+
+  const approveMember = async (uid: string, role: Role = 'member') => {
+    await withToken((token) => callBackend(token, 'approveUser', { uid, role }));
+    notify('Member approved.', 'saved');
+  };
+
+  return (
+    <Card accent="warm">
+      <SectionHeader title="Pending join requests" meta={`${pendingUsers.length} waiting`} />
+      <p className="helper-text">
+        Approve people who signed in and are waiting for access. They join as <strong>members</strong>. Admins can promote roles from the Admin page.
+      </p>
+      <div className="list-stack">
+        {pendingUsers.length === 0 ? (
+          <p className="helper-text">No pending requests.</p>
+        ) : (
+          pendingUsers.map((member) => (
+            <article className="list-item" key={member.uid}>
+              <div>
+                <strong>{member.displayName}</strong>
+                <p>{member.email}</p>
+              </div>
+              <button type="button" className="cta-button" onClick={() => void approveMember(member.uid)}>
+                Approve
+              </button>
+            </article>
+          ))
+        )}
+      </div>
+    </Card>
+  );
+};
+
+const InviteLinkCard = () => {
+  const { user, isDemoMode } = useAuth();
+  const { notify } = useNotification();
+  const [inviteLink, setInviteLink] = useState('');
+
+  if (!user) {
     return null;
   }
 
@@ -2932,14 +3082,8 @@ const AdminPage = () => {
       notify('Demo mode active. Connect Firebase Functions to run admin actions.', 'error');
       return null;
     }
-
     const token = await user.getIdToken();
     return callback(token);
-  };
-
-  const approveMember = async (uid: string, role: Role = 'member') => {
-    await withToken((token) => callBackend(token, 'approveUser', { uid, role }));
-    notify('Member approved.', 'saved');
   };
 
   const createInvite = async () => {
@@ -2956,7 +3100,6 @@ const AdminPage = () => {
     if (!inviteLink) {
       return;
     }
-
     try {
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(inviteLink);
@@ -2974,6 +3117,90 @@ const AdminPage = () => {
     }
   };
 
+  return (
+    <Card>
+      <SectionHeader title="Create invite link" meta="Organizer or admin" />
+      <p className="helper-text">
+        Create a shareable login link, copy it, and send it to family members so they can sign in and request access.
+      </p>
+      <div className="stack-row" style={{ flexWrap: 'wrap' }}>
+        <button type="button" className="cta-button" onClick={() => void createInvite()}>
+          Create invite
+        </button>
+        <button type="button" className="ghost-button" disabled={!inviteLink} onClick={() => void copyInviteLink()}>
+          Copy invite link
+        </button>
+        {inviteLink ? (
+          <a className="ghost-link" href={inviteLink} target="_blank" rel="noreferrer">
+            Open invite link
+          </a>
+        ) : null}
+      </div>
+      {inviteLink ? (
+        <label>
+          Invite URL
+          <input readOnly value={inviteLink} />
+        </label>
+      ) : null}
+    </Card>
+  );
+};
+
+const OrganizerPage = () => {
+  return (
+    <section className="page-section">
+      <SectionIntro
+        eyebrow="Organizer"
+        title="Organizer hub"
+        body="Approve join requests, share invite links, and manage reunion logistics. Admins can change member roles from the Admin page."
+      />
+      <div className="content-grid two-up">
+        <PendingApprovalsCard />
+        <InviteLinkCard />
+        <Card accent="warm">
+          <SectionHeader title="What you can manage" meta="From the main nav" />
+          <ul className="checklist">
+            <li>
+              <Link to="/app/events">Events</Link> — add, edit, and delete schedule items; members RSVP from each event card.
+            </li>
+            <li>
+              <Link to="/app/hotels">Hotels</Link> — room blocks, booking links, and deadlines.
+            </li>
+            <li>
+              <Link to="/app/flights">Flights</Link> — edit or remove any member&apos;s flight entries and attachments.
+            </li>
+            <li>
+              <Link to="/app/files">Files</Link> — delete shared uploads when needed.
+            </li>
+            <li>
+              <Link to="/app/bulletin">Bulletin</Link> — edit or delete any post to keep announcements clear.
+            </li>
+          </ul>
+        </Card>
+      </div>
+    </section>
+  );
+};
+
+const AdminPage = () => {
+  const { profile, user, isDemoMode } = useAuth();
+  const { notify } = useNotification();
+  const { data: directory } = useDirectory();
+
+  if (!profile || !user) {
+    return null;
+  }
+
+  const withToken = async <T,>(callback: (token: string) => Promise<T>) => {
+    if (isDemoMode) {
+      notify('Demo mode active. Connect Firebase Functions to run admin actions.', 'error');
+      return null;
+    }
+
+    const token = await user.getIdToken();
+    return callback(token);
+  };
+
   const changeRole = async (uid: string, role: Role) => {
     await withToken((token) => callBackend(token, 'changeRole', { uid, role }));
     notify('Role updated.', 'updated');
@@ -2983,74 +3210,31 @@ const AdminPage = () => {
     <section className="page-section">
       <SectionIntro eyebrow="Admin" title="Approvals, roles, and invites" body="Privileged actions route through the single HTTPS function so admin credentials never reach the client." />
       <div className="content-grid two-up">
-        {canManageUsers ? (
-          <Card accent="warm">
-            <SectionHeader title="Pending approvals" meta={`${pendingUsers.length} waiting`} />
-            <div className="list-stack">
-              {pendingUsers.map((member) => (
-                <article className="list-item" key={member.uid}>
-                  <div>
-                    <strong>{member.displayName}</strong>
-                    <p>{member.email}</p>
-                  </div>
-                  <button className="ghost-button" onClick={() => void approveMember(member.uid)}>
-                    Approve
-                  </button>
-                </article>
-              ))}
-            </div>
-          </Card>
-        ) : null}
+        <PendingApprovalsCard />
 
-        <Card>
-          <SectionHeader title="Create invite link" meta="Organizer or admin" />
-          <p className="helper-text">
-            Create a shareable login link, copy it, and send it to family members so they can sign in and request access.
-          </p>
-          <div className="stack-row" style={{ flexWrap: 'wrap' }}>
-            <button className="cta-button" onClick={() => void createInvite()}>
-              Create invite
-            </button>
-            <button className="ghost-button" disabled={!inviteLink} onClick={() => void copyInviteLink()}>
-              Copy invite link
-            </button>
-            {inviteLink ? (
-              <a className="ghost-link" href={inviteLink} target="_blank" rel="noreferrer">
-                Open invite link
-              </a>
-            ) : null}
+        <InviteLinkCard />
+
+        <Card className="full-grid">
+          <SectionHeader title="Role assignments" meta="Approved directory" />
+          <div className="list-stack">
+            {directory.map((member) => (
+              <article className="list-item" key={member.uid}>
+                <div>
+                  <strong>{member.displayName}</strong>
+                  <p>{member.email}</p>
+                </div>
+                <div className="stack-row">
+                  <span className="pill">{member.role}</span>
+                  <select defaultValue={member.role} onChange={(event) => void changeRole(member.uid, event.target.value as Role)}>
+                    <option value="member">member</option>
+                    <option value="organizer">organizer</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </div>
+              </article>
+            ))}
           </div>
-          {inviteLink ? (
-            <label>
-              Invite URL
-              <input readOnly value={inviteLink} />
-            </label>
-          ) : null}
         </Card>
-
-        {canManageUsers ? (
-          <Card className="full-grid">
-            <SectionHeader title="Role assignments" meta="Approved directory" />
-            <div className="list-stack">
-              {directory.map((member) => (
-                <article className="list-item" key={member.uid}>
-                  <div>
-                    <strong>{member.displayName}</strong>
-                    <p>{member.email}</p>
-                  </div>
-                  <div className="stack-row">
-                    <span className="pill">{member.role}</span>
-                    <select defaultValue={member.role} onChange={(event) => void changeRole(member.uid, event.target.value as Role)}>
-                      <option value="member">member</option>
-                      <option value="organizer">organizer</option>
-                      <option value="admin">admin</option>
-                    </select>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </Card>
-        ) : null}
       </div>
     </section>
   );

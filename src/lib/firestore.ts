@@ -764,7 +764,7 @@ export const deleteStorageFile = async (path?: string) => {
 
 export const uploadProfileImage = async (uid: string, file: File) => {
   if (!db || !storage) {
-    return null;
+    throw new Error('Photo upload needs Firebase Storage configured.');
   }
 
   const safeFileName = `avatar-${uid}`;
@@ -773,10 +773,20 @@ export const uploadProfileImage = async (uid: string, file: File) => {
   await uploadBytes(storageRef, file, { contentType: file.type });
   const downloadUrl = await getDownloadURL(storageRef);
 
-  await updateDoc(doc(db!, 'users', uid), {
-    photoURL: downloadUrl,
-    updatedAt: serverTimestamp(),
-  });
+  try {
+    await updateDoc(doc(db!, 'users', uid), {
+      photoURL: downloadUrl,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    // Avoid orphaned file in Storage if Firestore rules reject the write
+    try {
+      await deleteObject(storageRef);
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
 
   return downloadUrl;
 };

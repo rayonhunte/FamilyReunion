@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
+import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 
 initializeApp();
@@ -39,12 +40,17 @@ const hasApprovedRole = async (uid: string, roles: Role[]) => {
 };
 
 const approveUser = async (callerUid: string, payload: Record<string, unknown>) => {
-  if (!(await hasApprovedRole(callerUid, ['admin']))) {
-    return forbidden('Admin role required.');
+  const callerAdmin = await hasApprovedRole(callerUid, ['admin']);
+  const callerOrganizer = await hasApprovedRole(callerUid, ['organizer']);
+  if (!callerAdmin && !callerOrganizer) {
+    return forbidden('Organizer or admin role required.');
   }
 
   const uid = typeof payload.uid === 'string' ? payload.uid : '';
-  const role = (payload.role === 'organizer' || payload.role === 'admin' ? payload.role : 'member') as Role;
+  let role = (payload.role === 'organizer' || payload.role === 'admin' ? payload.role : 'member') as Role;
+  if (!callerAdmin) {
+    role = 'member';
+  }
   const groupId = typeof payload.groupId === 'string' ? payload.groupId : null;
   if (!uid) {
     return badRequest('Missing user id.');
@@ -222,3 +228,30 @@ export const backendApi = onRequest({ region: 'us-central1' }, async (request, r
 
   response.status(result.ok ? 200 : 403).json(result);
 });
+
+/** Keeps directory in sync when approved members update name or photo (e.g. profile image upload). */
+export const syncUserProfileToDirectory = onDocumentWritten(
+  { document: 'users/{uid}', region: 'us-central1' },
+  async (event) => {
+    const snap = event.data?.after;
+    if (!snap?.exists) {
+      return;
+    }
+    const after = snap.data() ?? {};
+    if (after.status !== 'approved') {
+      return;
+    }
+    const uid = event.params.uid;
+    await db.collection('directory').doc(uid).set(
+      {
+        uid,
+        displayName: after.displayName ?? after.email ?? 'Family member',
+        email: after.email ?? '',
+        photoURL: after.photoURL ?? null,
+        role: after.role ?? 'member',
+        groupId: after.groupId ?? null,
+      },
+      { merge: true },
+    );
+  },
+);

@@ -46,7 +46,7 @@ const demoUser = {
 } as User;
 
 const useRedirectAuth = false;
-const AUTH_DEBUG = true;
+const AUTH_DEBUG = false;
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(auth ? null : demoUser);

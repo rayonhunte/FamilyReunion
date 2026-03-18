@@ -5,6 +5,9 @@ const localFunctionTarget = 'https://us-central1-gtfast-7bf85.cloudfunctions.net
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
   server: {
     proxy: {
       '/api': {

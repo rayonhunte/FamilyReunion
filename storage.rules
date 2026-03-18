@@ -12,6 +12,12 @@ service firebase.storage {
         && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.status == 'approved';
     }
 
+    // Registered member (pending or approved) — needed so pending users can set avatar before approval.
+    function hasUserDoc() {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
     function imageOrPdf() {
       return request.resource.contentType.matches('image/.*')
         || request.resource.contentType == 'application/pdf';
@@ -19,7 +25,7 @@ service firebase.storage {
 
     match /profile-images/{uid}/{fileName} {
       allow read: if approved();
-      allow write: if approved()
+      allow write: if hasUserDoc()
         && request.auth.uid == uid
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');

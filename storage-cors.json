@@ -1,0 +1,27 @@
+[
+  {
+    "origin": [
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      "http://localhost:4173",
+      "http://127.0.0.1:4173",
+      "https://gtfast-7bf85.web.app",
+      "https://gtfast-7bf85.firebaseapp.com"
+    ],
+    "method": ["GET", "POST", "PUT", "HEAD", "DELETE"],
+    "responseHeader": [
+      "Content-Type",
+      "Authorization",
+      "Content-Length",
+      "x-goog-resumable",
+      "x-goog-upload-command",
+      "x-goog-upload-header-content-length",
+      "x-goog-upload-header-content-type",
+      "x-goog-upload-offset",
+      "x-goog-upload-protocol",
+      "x-firebase-appcheck",
+      "x-firebase-gmpid"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

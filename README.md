@@ -41,6 +41,42 @@ Private Firebase-powered member portal for planning a family reunion with approv
    npm run dev
    ```
 
+### Firebase Storage: “Repair project permissions” / uploads still fail
+
+If the Storage page shows **“Due to recent security improvements…”** and **Attach permissions** errors, Storage is **misconfigured at the project level** until this is fixed. CORS alone will not help.
+
+1. **Blaze billing** — [Cloud Storage for Firebase now requires the pay-as-you-go (Blaze) plan](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024). Upgrade in Firebase → **Upgrade** if you’re still on Spark.
+
+2. **Manual IAM (when the console repair fails)**  
+   - Open [Google Cloud IAM for the project](https://console.cloud.google.com/iam-admin/iam?project=gtfast-7bf85) (must be **Owner** or **Project IAM Admin**).  
+   - **Project settings** in Firebase → copy **Project number** (numeric).  
+   - **Grant access** → **New principals**:  
+     `service-<PROJECT_NUMBER>@gcp-sa-firebasestorage.iam.gserviceaccount.com`  
+     Example: if project number is `123456789`, use `service-123456789@gcp-sa-firebasestorage.iam.gserviceaccount.com`.  
+   - **Role**: **Storage Admin** (`roles/storage.admin`) *or* try **Firebase Admin SDK Administrator Service Agent** if listed. Save.  
+   - Wait a minute, reload **Firebase → Storage**, then try **Fix issue** / **Attach permissions** again.
+
+3. If it still fails: [Firebase support](https://firebase.google.com/support/contact/troubleshooting/) or an org admin (organization policies sometimes block automatic role grants).
+
+4. **Bucket name** — Your console shows `gs://gtfast-7bf85.appspot.com`. Your web app’s `storageBucket` must match that bucket (not a different bucket). If the SDK points at `gtfast-7bf85.firebasestorage.app` but the only bucket is `appspot.com`, align `.env` with the bucket Firebase shows.
+
+### Profile photo / file uploads fail on localhost (CORS)
+
+After Storage works in the console, if the browser still reports **CORS** on `firebasestorage.googleapis.com`, the **Storage bucket** must allow your dev origin (`http://localhost:5173`).
+
+1. Install [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (includes `gsutil`).
+2. Log in and use this project: `gcloud auth login` then `gcloud config set project gtfast-7bf85`.
+3. Bucket name = value of `storageBucket` in Firebase config (often `gtfast-7bf85.appspot.com` or `gtfast-7bf85.firebasestorage.app`). Check **Firebase Console → Storage** or your `.env.local` `VITE_FIREBASE_STORAGE_BUCKET`.
+4. Apply CORS once per bucket (edit `storage-cors.json` if you use another port or production URL):
+
+   ```bash
+   gsutil cors set storage-cors.json gs://YOUR_STORAGE_BUCKET
+   ```
+
+5. Hard-refresh the app and try the upload again.
+
+Add any extra origins (e.g. Vercel preview URL) to the `"origin"` array in `storage-cors.json`, then run `gsutil cors set` again.
+
 ## Deploy prep
 
 - Build the app: `npm run build`

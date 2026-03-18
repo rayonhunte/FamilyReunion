@@ -66,8 +66,8 @@ service cloud.firestore {
           && request.resource.data.role == 'member'
         ) || isBootstrapAdminWrite(uid);
 
-      allow get: if isOwner(uid) || isAdmin();
-      allow list: if isAdmin();
+      allow read: if isOwner(uid) || isAdmin()
+        || (isOrganizer() && resource.data.status == 'pending');
 
       allow update: if (
           isOwner(uid)
@@ -99,6 +99,18 @@ service cloud.firestore {
     match /events/{eventId} {
       allow read: if isApproved();
       allow create, update, delete: if isOrganizer();
+    }
+
+    match /eventRsvps/{rsvpId} {
+      allow read: if isApproved();
+      allow create, update: if isApproved()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.userId is string
+        && request.resource.data.eventId is string
+        && request.resource.data.displayName is string
+        && request.resource.data.status in ['attending', 'maybe', 'not-attending']
+        && rsvpId == request.auth.uid + '_' + request.resource.data.eventId;
+      allow delete: if false;
     }
 
     match /hotels/{hotelId} {
