@@ -36,3 +36,7 @@ export const callBackend = async <T>(
 
   return data.data as T;
 };
+
+/** After profile / photo save: updates `directory` for approved members (no Firestore trigger). */
+export const requestSyncMyDirectory = (token: string) =>
+  callBackend<void>(token, 'syncMyDirectory', {});

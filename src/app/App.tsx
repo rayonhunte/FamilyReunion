@@ -4,7 +4,7 @@ import { ReactFlow, ReactFlowProvider, Controls, MiniMap, Handle, BaseEdge, Edge
 import '@xyflow/react/dist/style.css';
 import { useNotification } from '../contexts/useNotification';
 import { useAuth } from '../hooks/useAuth';
-import { callBackend } from '../lib/functionsApi';
+import { callBackend, requestSyncMyDirectory } from '../lib/functionsApi';
 import {
   addBulletinComment,
   createBulletinPost,
@@ -494,7 +494,7 @@ const profileImageUploadError = (err: unknown): string => {
 };
 
 const ProfilePage = () => {
-  const { profile, user } = useAuth();
+  const { profile, user, isDemoMode } = useAuth();
   const { notify } = useNotification();
   const [imageUploading, setImageUploading] = useState(false);
   const [form, setForm] = useState({
@@ -508,6 +508,18 @@ const ProfilePage = () => {
     return null;
   }
 
+  const tryPushDirectory = async () => {
+    if (isDemoMode) {
+      return;
+    }
+    try {
+      const token = await user.getIdToken();
+      await requestSyncMyDirectory(token);
+    } catch {
+      /* e.g. /api not wired locally — profile still saved in Firestore */
+    }
+  };
+
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await updateProfileFields(profile.uid, {
@@ -516,6 +528,7 @@ const ProfilePage = () => {
       city: form.city.trim(),
       bio: form.bio.trim(),
     });
+    await tryPushDirectory();
     notify('Profile saved.', 'saved');
   };
 
@@ -528,6 +541,7 @@ const ProfilePage = () => {
     setImageUploading(true);
     try {
       await uploadProfileImage(profile.uid, file);
+      await tryPushDirectory();
       notify('Profile photo saved.', 'updated');
     } catch (err) {
       notify(profileImageUploadError(err), 'error');

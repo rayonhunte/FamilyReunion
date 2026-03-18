@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onRequest } from 'firebase-functions/v2/https';
 
 initializeApp();
@@ -167,6 +166,30 @@ const sendInvite = async (callerUid: string) => {
   });
 };
 
+/** Approved members: push users/{uid} → directory (photo/name after profile edit). Avoids Firestore-trigger + Eventarc deploy issues. */
+const syncMyDirectory = async (callerUid: string) => {
+  const snap = await db.collection('users').doc(callerUid).get();
+  if (!snap.exists) {
+    return badRequest('User not found.');
+  }
+  const u = snap.data() ?? {};
+  if (u.status !== 'approved') {
+    return json(true);
+  }
+  await db.collection('directory').doc(callerUid).set(
+    {
+      uid: callerUid,
+      displayName: u.displayName ?? u.email ?? 'Family member',
+      email: u.email ?? '',
+      photoURL: u.photoURL ?? null,
+      role: u.role ?? 'member',
+      groupId: u.groupId ?? null,
+    },
+    { merge: true },
+  );
+  return json(true);
+};
+
 export const backendApi = onRequest({ region: 'us-central1' }, async (request, response) => {
   response.set('Access-Control-Allow-Origin', request.headers.origin ?? '*');
   response.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
@@ -221,6 +244,9 @@ export const backendApi = onRequest({ region: 'us-central1' }, async (request, r
     case 'sendInvite':
       result = await sendInvite(decodedToken.uid);
       break;
+    case 'syncMyDirectory':
+      result = await syncMyDirectory(decodedToken.uid);
+      break;
     default:
       response.status(400).json(badRequest('Unsupported action.'));
       return;
@@ -228,30 +254,3 @@ export const backendApi = onRequest({ region: 'us-central1' }, async (request, r
 
   response.status(result.ok ? 200 : 403).json(result);
 });
-
-/** Keeps directory in sync when approved members update name or photo (e.g. profile image upload). */
-export const syncUserProfileToDirectory = onDocumentWritten(
-  { document: 'users/{uid}', region: 'us-central1' },
-  async (event) => {
-    const snap = event.data?.after;
-    if (!snap?.exists) {
-      return;
-    }
-    const after = snap.data() ?? {};
-    if (after.status !== 'approved') {
-      return;
-    }
-    const uid = event.params.uid;
-    await db.collection('directory').doc(uid).set(
-      {
-        uid,
-        displayName: after.displayName ?? after.email ?? 'Family member',
-        email: after.email ?? '',
-        photoURL: after.photoURL ?? null,
-        role: after.role ?? 'member',
-        groupId: after.groupId ?? null,
-      },
-      { merge: true },
-    );
-  },
-);
