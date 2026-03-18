@@ -338,6 +338,7 @@ const PortalShell = () => {
         <div className="brand-lockup">
           <p className="eyebrow">Family Reunion</p>
           <h2>Member Portal</h2>
+          {env.buildId ? <p className="build-id-under-portal">Build {env.buildId}</p> : null}
         </div>
         <nav className="hero-nav portal-nav portal-nav-primary" aria-label="Main navigation">
           <button
@@ -365,7 +366,6 @@ const PortalShell = () => {
             <strong>{profile?.displayName}</strong>
             <p className="helper-text">
               {profile?.role}
-              {env.buildId ? ` · build ${env.buildId}` : null}
             </p>
             {isDemoMode ? <span className="pill soft">Demo mode</span> : null}
           </div>
@@ -1327,7 +1327,6 @@ const BulletinPage = () => {
   const [selectedMemberMention, setSelectedMemberMention] = useState('');
   const [selectedAssetMention, setSelectedAssetMention] = useState('');
   const [selectedEventMention, setSelectedEventMention] = useState('');
-  const [selectedReplyMentionByPostId, setSelectedReplyMentionByPostId] = useState<Record<string, string>>({});
   const [bulletinImage, setBulletinImage] = useState<File | null>(null);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState('');
@@ -1342,8 +1341,6 @@ const BulletinPage = () => {
   const appendMention = (token: string, setValue: (value: string) => void, current: string) => {
     setValue(`${current.trimEnd()} ${token}`.trim());
   };
-
-  const appendMentionToText = (token: string, current: string) => `${current.trimEnd()} ${token}`.trim();
 
   const submitPost = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1448,6 +1445,16 @@ const BulletinPage = () => {
     setEditingBody('');
     setEditingImage(null);
     notify('Image removed from post.', 'deleted');
+  };
+
+  const getTrailingMentionQuery = (text: string) => {
+    const idx = text.lastIndexOf('@');
+    if (idx < 0) return null;
+    // Require a word boundary before '@' (start or whitespace)
+    if (idx > 0 && !/\s/.test(text[idx - 1] ?? '')) return null;
+    const query = text.slice(idx + 1).trim();
+    if (!query) return null;
+    return { startIndex: idx, query };
   };
 
   return (
@@ -1625,34 +1632,49 @@ const BulletinPage = () => {
                     ))}
                 </div>
                 <form className="inline-comment-form" onSubmit={(event) => void submitComment(event, post)}>
-                  <input
-                    value={newComments[post.id] ?? ''}
-                    onChange={(event) => setNewComments((current) => ({ ...current, [post.id]: event.target.value }))}
-                    placeholder="Add a comment"
-                  />
-                  <select
-                    value={selectedReplyMentionByPostId[post.id] ?? ''}
-                    onChange={(event) => {
-                      const uid = event.target.value;
-                      if (!uid) return;
-                      const member = directory.find((m) => m.uid === uid);
-                      if (!member) return;
-                      const token = mentionToken({ type: 'user', id: member.uid, label: member.displayName });
-                      setNewComments((current) => ({
-                        ...current,
-                        [post.id]: appendMentionToText(token, current[post.id] ?? ''),
-                      }));
-                      setSelectedReplyMentionByPostId((current) => ({ ...current, [post.id]: '' }));
-                    }}
-                    aria-label="Mention member in reply"
-                  >
-                    <option value="">@mention (optional)</option>
-                    {directory.map((member) => (
-                      <option key={member.uid} value={member.uid}>
-                        {member.displayName}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relationship-combobox">
+                    <input
+                      value={newComments[post.id] ?? ''}
+                      onChange={(event) => setNewComments((current) => ({ ...current, [post.id]: event.target.value }))}
+                      placeholder="Add a comment"
+                    />
+                    {(() => {
+                      const value = newComments[post.id] ?? '';
+                      const mention = getTrailingMentionQuery(value);
+                      if (!mention) return null;
+                      const q = mention.query.toLowerCase();
+                      const filtered = directory
+                        .filter((m) => m.uid !== profile?.uid)
+                        .filter((m) => (m.displayName ?? '').toLowerCase().includes(q) || (m.email ?? '').toLowerCase().includes(q))
+                        .slice(0, 6);
+                      if (filtered.length === 0) return null;
+
+                      return (
+                        <ul className="relationship-combobox-list" role="listbox" aria-label="Mention suggestions">
+                          {filtered.map((m) => {
+                            const token = mentionToken({ type: 'user', id: m.uid, label: m.displayName });
+                            return (
+                              <li
+                                key={m.uid}
+                                role="option"
+                                className="relationship-combobox-option"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setNewComments((current) => {
+                                    const currentText = current[post.id] ?? '';
+                                    const nextText = `${currentText.slice(0, mention.startIndex)}${token} `;
+                                    return { ...current, [post.id]: nextText };
+                                  });
+                                }}
+                              >
+                                {m.displayName}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      );
+                    })()}
+                  </div>
                   <button className="ghost-button" type="submit">
                     Reply
                   </button>
@@ -3360,9 +3382,8 @@ const SectionHeader = ({ title, meta }: { title: string; meta?: string }) => (
   </header>
 );
 
-const SectionIntro = ({ eyebrow, title, body }: { eyebrow: string; title: string; body: string }) => (
+const SectionIntro = ({ title, body }: { eyebrow: string; title: string; body: string }) => (
   <header className="section-intro">
-    <p className="eyebrow">{eyebrow}</p>
     <h1>{title}</h1>
     <p>{body}</p>
   </header>

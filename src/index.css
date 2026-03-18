@@ -141,6 +141,12 @@ p {
   margin: 0 0 0.45rem;
 }
 
+.build-id-under-portal {
+  margin: 0.15rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
 .hero-nav,
 .portal-nav {
   display: flex;
