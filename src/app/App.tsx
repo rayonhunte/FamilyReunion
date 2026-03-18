@@ -1466,7 +1466,40 @@ const BulletinPage = () => {
           <form className="form-grid" onSubmit={submitPost}>
             <label className="full-span">
               Message
-              <textarea value={newPost} onChange={(event) => setNewPost(event.target.value)} rows={5} />
+              <div className="relationship-combobox">
+                <textarea value={newPost} onChange={(event) => setNewPost(event.target.value)} rows={5} />
+                {(() => {
+                  const mention = getTrailingMentionQuery(newPost);
+                  if (!mention) return null;
+                  const q = mention.query.toLowerCase();
+                  const filtered = directory
+                    .filter((m) => m.uid !== profile?.uid)
+                    .filter((m) => (m.displayName ?? '').toLowerCase().includes(q) || (m.email ?? '').toLowerCase().includes(q))
+                    .slice(0, 6);
+                  if (filtered.length === 0) return null;
+
+                  return (
+                    <ul className="relationship-combobox-list" role="listbox" aria-label="Member mention suggestions">
+                      {filtered.map((m) => {
+                        const token = mentionToken({ type: 'user', id: m.uid, label: m.displayName });
+                        return (
+                          <li
+                            key={m.uid}
+                            role="option"
+                            className="relationship-combobox-option"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setNewPost((current) => `${current.slice(0, mention.startIndex)}${token} `);
+                            }}
+                          >
+                            {m.displayName}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                })()}
+              </div>
             </label>
             <label>
               Mention member
