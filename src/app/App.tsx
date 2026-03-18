@@ -451,6 +451,14 @@ const OverviewPage = () => {
   const { data: posts } = useBulletinPosts();
   const { data: assets } = useAssets();
 
+  const stripMentionTokens = (text: string) =>
+    text.replace(/@\[(user|asset|event):[^:\]]+:[^\]]+]/g, (_m, _t1: string, t2: string) => t2).trim();
+
+  const latestPost = posts[0] ?? null;
+  const latestPostSnippet = latestPost
+    ? `${stripMentionTokens(latestPost.body ?? '').slice(0, 120)}${stripMentionTokens(latestPost.body ?? '').length > 120 ? '…' : ''}`
+    : '';
+
   return (
     <section className="page-section">
       <SectionIntro
@@ -465,6 +473,27 @@ const OverviewPage = () => {
         <StatCard title="Bulletin posts" value={String(posts.length)} detail="Announcements and discussions shared with the family." />
         <StatCard title="Shared files" value={String(assets.length)} detail="Images and PDFs stored in Firebase Storage." />
       </div>
+
+      <Card accent="warm">
+        <SectionHeader
+          title="Latest bulletin post"
+          meta={latestPost ? `by ${latestPost.authorName}` : 'No posts yet'}
+        />
+        {latestPost ? (
+          <div className="list-stack">
+            <p className="helper-text" style={{ marginTop: 0 }}>
+              {latestPostSnippet}
+            </p>
+            <div className="stack-row">
+              <Link to="/app/bulletin" className="ghost-link">
+                View bulletin
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <p className="helper-text">Check back soon for family updates.</p>
+        )}
+      </Card>
 
       <Card accent="warm">
         <SectionHeader title="How to use the portal" meta="Start here" />
