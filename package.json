@@ -10,7 +10,9 @@
     "check": "npm run lint && npm run build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "storage:cors": "bash scripts/apply-storage-cors.sh",
     "deploy:rules": "firebase deploy --only firestore",
+    "deploy:storage": "firebase deploy --only storage",
     "deploy:hosting": "npm run build && firebase deploy --only hosting",
     "deploy": "npm run build && firebase deploy"
   },

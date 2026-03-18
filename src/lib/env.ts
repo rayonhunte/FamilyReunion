@@ -1,4 +1,8 @@
-const value = (key: string, fallback = '') => import.meta.env[key] ?? fallback;
+const value = (key: string, fallback = '') => {
+  const raw = import.meta.env[key] ?? fallback;
+  if (typeof raw !== 'string') return raw as string;
+  return raw.replace(/^["']|["']$/g, '').trim();
+};
 
 export const env = {
   firebase: {

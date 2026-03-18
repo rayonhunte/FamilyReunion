@@ -770,7 +770,9 @@ export const uploadProfileImage = async (uid: string, file: File) => {
   const safeFileName = `avatar-${uid}`;
   const storagePath = `profile-images/${uid}/${safeFileName}`;
   const storageRef = ref(storage, storagePath);
-  await uploadBytes(storageRef, file, { contentType: file.type });
+  const contentType =
+    file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
+  await uploadBytes(storageRef, file, { contentType });
   const downloadUrl = await getDownloadURL(storageRef);
 
   try {

@@ -60,22 +60,25 @@ If the Storage page shows **“Due to recent security improvements…”** and *
 
 4. **Bucket name** — Your console shows `gs://gtfast-7bf85.appspot.com`. Your web app’s `storageBucket` must match that bucket (not a different bucket). If the SDK points at `gtfast-7bf85.firebasestorage.app` but the only bucket is `appspot.com`, align `.env` with the bucket Firebase shows.
 
-### Profile photo / file uploads fail on localhost (CORS)
+### Uploads blocked by CORS (localhost or `*.web.app`)
 
-After Storage works in the console, if the browser still reports **CORS** on `firebasestorage.googleapis.com`, the **Storage bucket** must allow your dev origin (`http://localhost:5173`).
+CORS is **per bucket**. If `VITE_FIREBASE_STORAGE_BUCKET` is `gtfast-7bf85.firebasestorage.app` but you only ran `gsutil` on `…appspot.com`, **production uploads still fail**.
 
-1. Install [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (includes `gsutil`).
-2. Log in and use this project: `gcloud auth login` then `gcloud config set project gtfast-7bf85`.
-3. Bucket name = value of `storageBucket` in Firebase config (often `gtfast-7bf85.appspot.com` or `gtfast-7bf85.firebasestorage.app`). Check **Firebase Console → Storage** or your `.env.local` `VITE_FIREBASE_STORAGE_BUCKET`.
-4. Apply CORS once per bucket (edit `storage-cors.json` if you use another port or production URL):
+From the repo root (applies CORS to **both** default bucket names if they exist):
 
-   ```bash
-   gsutil cors set storage-cors.json gs://YOUR_STORAGE_BUCKET
-   ```
+```bash
+gcloud auth login
+npm run storage:cors
+```
 
-5. Hard-refresh the app and try the upload again.
+Or manually:
 
-Add any extra origins (e.g. Vercel preview URL) to the `"origin"` array in `storage-cors.json`, then run `gsutil cors set` again.
+```bash
+gsutil cors set storage-cors.json gs://gtfast-7bf85.firebasestorage.app
+gsutil cors set storage-cors.json gs://gtfast-7bf85.appspot.com
+```
+
+Edit `storage-cors.json` to add origins (e.g. Vercel URL), then run the command again for **the same bucket** your app uses. **`VITE_FIREBASE_STORAGE_BUCKET` must match the bucket name in Firebase Console → Storage** (rebuild after changing secrets).
 
 ## Deploy prep
 

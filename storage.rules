@@ -23,7 +23,17 @@ service firebase.storage {
         || request.resource.contentType == 'application/pdf';
     }
 
+    // Profile avatars (current app uses profile-images/…)
     match /profile-images/{uid}/{fileName} {
+      allow read: if approved();
+      allow write: if hasUserDoc()
+        && request.auth.uid == uid
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Legacy path (older clients used images/… for avatars)
+    match /images/{uid}/{fileName} {
       allow read: if approved();
       allow write: if hasUserDoc()
         && request.auth.uid == uid
