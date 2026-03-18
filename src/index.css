@@ -718,6 +718,7 @@ p {
 
 .inline-comment-form {
   margin-top: 0.8rem;
+  flex-wrap: wrap;
 }
 
 .rich-text {
@@ -1454,4 +1455,8 @@ p {
 .relationship-combobox-option:hover,
 .relationship-combobox-option.highlighted {
   background: var(--mint);
+}
+
+.relationship-add-empty-hint {
+  margin-top: 0.35rem;
 }

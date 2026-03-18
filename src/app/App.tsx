@@ -5,6 +5,9 @@ import '@xyflow/react/dist/style.css';
 import { useNotification } from '../contexts/useNotification';
 import { useAuth } from '../hooks/useAuth';
 import { callBackend, requestSyncMyDirectory } from '../lib/functionsApi';
+import { env } from '../lib/env';
+import { NotificationHub } from '../components/NotificationHub';
+import { requestSystemNotificationPermission } from '../lib/systemNotifications';
 import {
   addBulletinComment,
   createBulletinPost,
@@ -295,6 +298,10 @@ const PortalShell = () => {
   const isOrganizer = profile?.role === 'organizer';
   const canAccessOrganizerHub = isAdmin || isOrganizer;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [phoneNotifPermission, setPhoneNotifPermission] = useState<NotificationPermission | null>(() => {
+    if (typeof Notification === 'undefined') return null;
+    return Notification.permission;
+  });
 
   /* Close drawer when route changes (browser back, etc.) */
   useEffect(() => {
@@ -310,6 +317,11 @@ const PortalShell = () => {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [menuOpen]);
+
+  const enablePhoneNotifications = async () => {
+    const perm = await requestSystemNotificationPermission();
+    setPhoneNotifPermission(perm);
+  };
 
   const visiblePrimary = primaryNavItems.filter((item) => {
     if (!item.roles?.length) return true;
@@ -351,12 +363,28 @@ const PortalShell = () => {
         <div className="portal-actions">
           <div>
             <strong>{profile?.displayName}</strong>
-            <p className="helper-text">{profile?.role}</p>
+            <p className="helper-text">
+              {profile?.role}
+              {env.buildId ? ` · build ${env.buildId}` : null}
+            </p>
             {isDemoMode ? <span className="pill soft">Demo mode</span> : null}
           </div>
-          <button className="ghost-button" onClick={() => void signOutUser()}>
-            Sign out
-          </button>
+          <div className="portal-actions-right">
+            {phoneNotifPermission !== null ? (
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={() => void enablePhoneNotifications()}
+                disabled={isDemoMode}
+                aria-label="Enable phone notifications"
+              >
+                {phoneNotifPermission === 'granted' ? 'Phone notifications enabled' : 'Enable phone notifications'}
+              </button>
+            ) : null}
+            <button className="ghost-button" onClick={() => void signOutUser()}>
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 
@@ -394,6 +422,7 @@ const PortalShell = () => {
       ) : null}
 
       <main className="content-shell portal-content">
+        <NotificationHub />
         <Routes>
           <Route path="/" element={<OverviewPage />} />
           <Route path="profile" element={<ProfilePage />} />
@@ -1298,6 +1327,7 @@ const BulletinPage = () => {
   const [selectedMemberMention, setSelectedMemberMention] = useState('');
   const [selectedAssetMention, setSelectedAssetMention] = useState('');
   const [selectedEventMention, setSelectedEventMention] = useState('');
+  const [selectedReplyMentionByPostId, setSelectedReplyMentionByPostId] = useState<Record<string, string>>({});
   const [bulletinImage, setBulletinImage] = useState<File | null>(null);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState('');
@@ -1312,6 +1342,8 @@ const BulletinPage = () => {
   const appendMention = (token: string, setValue: (value: string) => void, current: string) => {
     setValue(`${current.trimEnd()} ${token}`.trim());
   };
+
+  const appendMentionToText = (token: string, current: string) => `${current.trimEnd()} ${token}`.trim();
 
   const submitPost = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1578,7 +1610,17 @@ const BulletinPage = () => {
                     .map((comment) => (
                       <div className="comment-card" key={comment.id}>
                         <strong>{comment.authorName}</strong>
-                        <p>{comment.body}</p>
+                        <p>
+                          {parseMentionSegments(comment.body).map((segment, index) =>
+                            segment.type === 'mention' ? (
+                              <span className={`inline-mention mention-${segment.mentionType ?? 'user'}`} key={`${comment.id}-${index}`}>
+                                @{segment.value}
+                              </span>
+                            ) : (
+                              <span key={`${comment.id}-${index}`}>{segment.value}</span>
+                            ),
+                          )}
+                        </p>
                       </div>
                     ))}
                 </div>
@@ -1588,6 +1630,29 @@ const BulletinPage = () => {
                     onChange={(event) => setNewComments((current) => ({ ...current, [post.id]: event.target.value }))}
                     placeholder="Add a comment"
                   />
+                  <select
+                    value={selectedReplyMentionByPostId[post.id] ?? ''}
+                    onChange={(event) => {
+                      const uid = event.target.value;
+                      if (!uid) return;
+                      const member = directory.find((m) => m.uid === uid);
+                      if (!member) return;
+                      const token = mentionToken({ type: 'user', id: member.uid, label: member.displayName });
+                      setNewComments((current) => ({
+                        ...current,
+                        [post.id]: appendMentionToText(token, current[post.id] ?? ''),
+                      }));
+                      setSelectedReplyMentionByPostId((current) => ({ ...current, [post.id]: '' }));
+                    }}
+                    aria-label="Mention member in reply"
+                  >
+                    <option value="">@mention (optional)</option>
+                    {directory.map((member) => (
+                      <option key={member.uid} value={member.uid}>
+                        {member.displayName}
+                      </option>
+                    ))}
+                  </select>
                   <button className="ghost-button" type="submit">
                     Reply
                   </button>
@@ -2073,10 +2138,23 @@ function FamilyTreePage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<RelationshipType | null>(null);
 
-  const otherMembers = useMemo(
-    () => directory.filter((m) => m.uid !== profile?.uid),
-    [directory, profile?.uid],
+  /** Members you don't already have any relationship edge with (either direction). */
+  const uidsRelatedToMe = useMemo(() => {
+    const s = new Set<string>();
+    const me = profile?.uid;
+    if (!me) return s;
+    for (const r of relationships) {
+      if (r.fromUid === me) s.add(r.toUid);
+      if (r.toUid === me) s.add(r.fromUid);
+    }
+    return s;
+  }, [relationships, profile?.uid]);
+
+  const membersSelectableForNewRel = useMemo(
+    () => directory.filter((m) => m.uid !== profile?.uid && !uidsRelatedToMe.has(m.uid)),
+    [directory, profile?.uid, uidsRelatedToMe],
   );
+  const addToUid = addForm.toUid && !uidsRelatedToMe.has(addForm.toUid) ? addForm.toUid : '';
   const myRelationshipIds = useMemo(
     () =>
       new Set(
@@ -2095,10 +2173,10 @@ function FamilyTreePage() {
 
   const onSubmitAdd = async (e: FormEvent) => {
     e.preventDefault();
-    if (!profile || !addForm.toUid) return;
+    if (!profile || !addToUid) return;
     const id = await createRelationship({
       fromUid: profile.uid,
-      toUid: addForm.toUid,
+      toUid: addToUid,
       relationshipType: addForm.relationshipType,
       createdBy: profile.uid,
     });
@@ -2282,17 +2360,28 @@ function FamilyTreePage() {
             <label>
               Family member
               <select
-                value={addForm.toUid}
+                value={addToUid}
                 onChange={(e) => setAddForm((f) => ({ ...f, toUid: e.target.value }))}
                 aria-label="Select family member"
+                disabled={membersSelectableForNewRel.length === 0}
               >
-                <option value="">— Select —</option>
-                {otherMembers.map((m) => (
+                <option value="">
+                  {membersSelectableForNewRel.length === 0
+                    ? '— No members left to add —'
+                    : '— Select —'}
+                </option>
+                {membersSelectableForNewRel.map((m) => (
                   <option key={m.uid} value={m.uid}>
                     {m.displayName}
                   </option>
                 ))}
               </select>
+              {membersSelectableForNewRel.length === 0 ? (
+                <p className="helper-text relationship-add-empty-hint">
+                  Everyone in the directory is already connected to you on the tree. Remove a relationship below to
+                  choose that member again.
+                </p>
+              ) : null}
             </label>
             <label>
               Relationship
@@ -2304,7 +2393,7 @@ function FamilyTreePage() {
               />
             </label>
             <div className="stack-row">
-              <button type="submit" className="cta-button" disabled={!addForm.toUid}>
+              <button type="submit" className="cta-button" disabled={!addToUid}>
                 Add
               </button>
             </div>

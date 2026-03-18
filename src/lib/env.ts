@@ -14,6 +14,7 @@ export const env = {
     appId: value('VITE_FIREBASE_APP_ID'),
     measurementId: value('VITE_FIREBASE_MEASUREMENT_ID'),
   },
+  buildId: value('VITE_BUILD_ID'),
   functionsUrl: value('VITE_FUNCTIONS_URL', '/api'),
   bootstrapAdminEmail: value('VITE_BOOTSTRAP_ADMIN_EMAIL', 'admin@hunteinvest.com'),
 };
