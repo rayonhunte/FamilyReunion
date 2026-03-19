@@ -527,16 +527,23 @@ export const logAuditEvent = async (
     return;
   }
 
-  await addDoc(collection(db!, 'auditLogs'), {
-    userId,
-    userDisplayName,
-    action,
-    resourceType,
-    resourceId,
-    resourceLabel: resourceLabel ?? null,
-    details: details ?? null,
-    createdAt: serverTimestamp(),
-  });
+  // Audit logging is best-effort. If Firestore rules don't allow writes to `auditLogs`
+  // (common in local/dev deployments), we don't want to block core CRUD flows.
+  try {
+    await addDoc(collection(db!, 'auditLogs'), {
+      userId,
+      userDisplayName,
+      action,
+      resourceType,
+      resourceId,
+      resourceLabel: resourceLabel ?? null,
+      details: details ?? null,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[logAuditEvent] write failed (non-fatal):', err);
+  }
 };
 
 const subscribeAuditLogs = (setData: (value: AuditLogEntry[]) => void) => {
@@ -583,8 +590,21 @@ export const createOrGetDirectThread = async (
     return participantKey;
   }
 
-  const existingSnapshot = await getDocs(query(collection(db!, 'threads'), where('participantKey', '==', participantKey)));
-  if (!existingSnapshot.empty) {
+  // We attempt to reuse an existing thread by participantKey.
+  // If reads are denied for some reason, we still try to create the thread doc;
+  // the subsequent create/update rules will determine whether the user can proceed.
+  let existingSnapshot: Awaited<ReturnType<typeof getDocs>> | null = null;
+  try {
+    existingSnapshot = await getDocs(
+      query(collection(db!, 'threads'), where('participantKey', '==', participantKey)),
+    );
+  } catch (err) {
+    // #region agent log (minimal console so the user sees a stack in devtools)
+    // eslint-disable-next-line no-console
+    console.error('[createOrGetDirectThread] existing thread lookup failed:', err);
+    // #endregion
+  }
+  if (existingSnapshot && !existingSnapshot.empty) {
     return existingSnapshot.docs[0].id;
   }
 
@@ -611,23 +631,33 @@ export const sendThreadMessage = async (
     return;
   }
 
-  await addDoc(collection(db!, 'threads', threadId, 'messages'), {
-    ...payload,
-    createdAt: serverTimestamp(),
-  });
+  try {
+    await addDoc(collection(db!, 'threads', threadId, 'messages'), {
+      ...payload,
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Missing or insufficient permissions.';
+    throw new Error(`SendThreadMessage: could not create message. ${message}`);
+  }
 
-  await setDoc(
-    doc(db!, 'threads', threadId),
-    {
-      participantIds,
-      participantKey: participantKeyFor(participantIds),
-      participantNames,
-      lastMessageText: payload.body,
-      lastMessageAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
+  try {
+    await setDoc(
+      doc(db!, 'threads', threadId),
+      {
+        participantIds,
+        participantKey: participantKeyFor(participantIds),
+        participantNames,
+        lastMessageText: payload.body,
+        lastMessageAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Missing or insufficient permissions.';
+    throw new Error(`SendThreadMessage: could not update thread metadata. ${message}`);
+  }
 };
 
 export const uploadAsset = async ({
@@ -650,20 +680,29 @@ export const uploadAsset = async ({
   relatedLabel?: string;
 }) => {
   if (!db || !storage) {
-    return;
+    throw new Error('File upload needs Firebase Storage configured.');
   }
+
+  const contentType =
+    kind === 'image'
+      ? file.type && file.type.startsWith('image/')
+        ? file.type
+        : 'image/jpeg'
+      : file.type === 'application/pdf'
+        ? 'application/pdf'
+        : 'application/pdf';
 
   const folder =
     relatedType === 'general'
       ? kind === 'image'
-        ? 'gallery'
-        : 'documents'
+        ? `gallery/${ownerUid}`
+        : `documents/${ownerUid}`
       : `associations/${relatedType}/${ownerUid}/${relatedId ?? 'unassigned'}`;
   const relatedKey = relatedType === 'general' ? 'general' : `${relatedType}:${relatedId ?? ''}`;
   const safeFileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`;
   const storagePath = `${folder}/${safeFileName}`;
   const storageRef = ref(storage, storagePath);
-  await uploadBytes(storageRef, file, { contentType: file.type });
+  await uploadBytes(storageRef, file, { contentType });
   const downloadUrl = await getDownloadURL(storageRef);
 
   const docRef = await addDoc(collection(db!, 'assets'), {
@@ -674,7 +713,7 @@ export const uploadAsset = async ({
     description: description?.trim() || '',
     path: storagePath,
     downloadUrl,
-    contentType: file.type,
+    contentType,
     size: file.size,
     relatedType,
     relatedId: relatedId ?? null,

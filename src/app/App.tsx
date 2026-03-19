@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ReactFlow, ReactFlowProvider, Controls, MiniMap, Handle, BaseEdge, EdgeLabelRenderer, getSmoothStepPath, applyNodeChanges, applyEdgeChanges, Position, type Node as FlowNode, type Edge as FlowEdge, type NodeProps, type EdgeProps } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useNotification } from '../contexts/useNotification';
@@ -7,7 +7,10 @@ import { useAuth } from '../hooks/useAuth';
 import { callBackend, requestSyncMyDirectory } from '../lib/functionsApi';
 import { env } from '../lib/env';
 import { NotificationHub } from '../components/NotificationHub';
+import { AssetPreviewModal } from '../components/AssetPreviewModal';
+import { QuickMessageModal } from '../components/QuickMessageModal';
 import { requestSystemNotificationPermission } from '../lib/systemNotifications';
+import { PortalRoutes } from './routes/PortalRoutes';
 import {
   addBulletinComment,
   createBulletinPost,
@@ -65,6 +68,7 @@ import type {
   RelationshipType,
   Role,
   RSVPStatus,
+  Thread,
 } from '../types/models';
 
 const mentionToken = ({
@@ -79,7 +83,7 @@ const mentionToken = ({
 
 const parseMentionSegments = (text: string) => {
   const pattern = /@\[(user|asset|event):([^:\]]+):([^\]]+)\]/g;
-  const segments: Array<{ type: 'text' | 'mention'; value: string; mentionType?: string }> = [];
+  const segments: Array<{ type: 'text' | 'mention'; value: string; mentionType?: string; mentionId?: string }> = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -92,6 +96,7 @@ const parseMentionSegments = (text: string) => {
       type: 'mention',
       value: match[3],
       mentionType: match[1],
+      mentionId: match[2],
     });
     lastIndex = pattern.lastIndex;
   }
@@ -323,6 +328,14 @@ const PortalShell = () => {
     setPhoneNotifPermission(perm);
   };
 
+  const checkForUpdates = () => {
+    // "Hard reload": force a full page refresh with a cache-busting query param.
+    // This ensures Vite/Service Worker/browser caches don't prevent updated bundles from loading.
+    const url = new URL(window.location.href);
+    url.searchParams.set('check', String(Date.now()));
+    window.location.replace(url.toString());
+  };
+
   const visiblePrimary = primaryNavItems.filter((item) => {
     if (!item.roles?.length) return true;
     if (isAdmin && item.roles.includes('admin')) return true;
@@ -349,38 +362,24 @@ const PortalShell = () => {
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             onClick={() => setMenuOpen((o) => !o)}
           >
-            <span className="portal-nav-menu-icon" aria-hidden>
-              <span />
-              <span />
-              <span />
-            </span>
+            Menu
           </button>
           {visiblePrimary.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.to === '/app'}>
               {item.label}
             </NavLink>
           ))}
+          <button
+            type="button"
+            className="ghost-button portal-nav-check-updates"
+            onClick={checkForUpdates}
+            aria-label="Check for updates"
+          >
+            Check for updates
+          </button>
         </nav>
         <div className="portal-actions">
-          <div>
-            <strong>{profile?.displayName}</strong>
-            <p className="helper-text">
-              {profile?.role}
-            </p>
-            {isDemoMode ? <span className="pill soft">Demo mode</span> : null}
-          </div>
           <div className="portal-actions-right">
-            {phoneNotifPermission !== null ? (
-              <button
-                className="ghost-button"
-                type="button"
-                onClick={() => void enablePhoneNotifications()}
-                disabled={isDemoMode}
-                aria-label="Enable phone notifications"
-              >
-                {phoneNotifPermission === 'granted' ? 'Phone notifications enabled' : 'Enable phone notifications'}
-              </button>
-            ) : null}
             <button className="ghost-button" onClick={() => void signOutUser()}>
               Sign out
             </button>
@@ -410,6 +409,11 @@ const PortalShell = () => {
                 Close
               </button>
             </div>
+            <div className="portal-nav-drawer-profile">
+              <strong>{profile?.displayName}</strong>
+              <p className="helper-text">{profile?.role}</p>
+              {isDemoMode ? <span className="pill soft">Demo mode</span> : null}
+            </div>
             <nav className="portal-nav-drawer-links" aria-label="Additional navigation">
               {visibleMenu.map((item) => (
                 <NavLink key={item.to} to={item.to} onClick={() => setMenuOpen(false)}>
@@ -417,28 +421,41 @@ const PortalShell = () => {
                 </NavLink>
               ))}
             </nav>
+            {phoneNotifPermission !== null ? (
+              <div className="portal-nav-drawer-actions">
+                <button
+                  className="ghost-button"
+                  type="button"
+                  onClick={() => void enablePhoneNotifications()}
+                  disabled={isDemoMode}
+                  aria-label="Enable phone notifications"
+                >
+                  {phoneNotifPermission === 'granted' ? 'Phone notifications enabled' : 'Enable phone notifications'}
+                </button>
+              </div>
+            ) : null}
           </div>
         </>
       ) : null}
 
       <main className="content-shell portal-content">
         <NotificationHub />
-        <Routes>
-          <Route path="/" element={<OverviewPage />} />
-          <Route path="profile" element={<ProfilePage />} />
-          <Route path="registration" element={<RegistrationPage />} />
-          <Route path="events" element={<EventsPage />} />
-          <Route path="hotels" element={<HotelsPage />} />
-          <Route path="flights" element={<FlightsPage />} />
-          <Route path="bulletin" element={<BulletinPage />} />
-          <Route path="messages" element={<MessagesPage />} />
-          <Route path="files" element={<FilesPage />} />
-          <Route path="family-tree" element={<FamilyTreePage />} />
-          <Route path="help" element={<HelpPage />} />
-          <Route path="audit" element={isAdmin ? <AuditPage /> : <Navigate to="/app" replace />} />
-          <Route path="organizer" element={canAccessOrganizerHub ? <OrganizerPage /> : <Navigate to="/app" replace />} />
-          <Route path="admin" element={isAdmin ? <AdminPage /> : <Navigate to="/app" replace />} />
-        </Routes>
+        <PortalRoutes
+          overview={<OverviewPage />}
+          profile={<ProfilePage />}
+          registration={<RegistrationPage />}
+          events={<EventsPage />}
+          hotels={<HotelsPage />}
+          flights={<FlightsPage />}
+          bulletin={<BulletinPage />}
+          messages={<MessagesPage />}
+          files={<FilesPage />}
+          familyTree={<FamilyTreePage />}
+          help={<HelpPage />}
+          audit={isAdmin ? <AuditPage /> : <Navigate to="/app" replace />}
+          organizer={canAccessOrganizerHub ? <OrganizerPage /> : <Navigate to="/app" replace />}
+          admin={isAdmin ? <AdminPage /> : <Navigate to="/app" replace />}
+        />
       </main>
     </div>
   );
@@ -580,14 +597,18 @@ const ProfilePage = () => {
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    await updateProfileFields(profile.uid, {
-      displayName: form.displayName.trim() || user.displayName || profile.displayName,
-      phone: form.phone.trim(),
-      city: form.city.trim(),
-      bio: form.bio.trim(),
-    });
-    await tryPushDirectory();
-    notify('Profile saved.', 'saved');
+    try {
+      await updateProfileFields(profile.uid, {
+        displayName: form.displayName.trim() || user.displayName || profile.displayName,
+        phone: form.phone.trim(),
+        city: form.city.trim(),
+        bio: form.bio.trim(),
+      });
+      await tryPushDirectory();
+      notify('Profile saved.', 'saved');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not save profile.', 'error');
+    }
   };
 
   const onProfileImageChange = async (event: FormEvent<HTMLInputElement>) => {
@@ -888,19 +909,26 @@ const EventsPage = () => {
       return;
     }
 
-    const id = await createEvent({
-      ...form,
-      startAt: form.startAt,
-      endAt: form.endAt,
-      visibility: 'members',
-      createdBy: profile.uid,
-    } as Omit<EventItem, 'id'>);
+    try {
+      const id = await createEvent({
+        ...form,
+        startAt: form.startAt,
+        endAt: form.endAt,
+        visibility: 'members',
+        createdBy: profile.uid,
+      } as Omit<EventItem, 'id'>);
 
-    if (id) {
+      if (!id) {
+        notify('Could not publish event.', 'error');
+        return;
+      }
+
       await logAuditEvent(profile.uid, profile.displayName, 'create', 'event', id, form.title);
+      setForm({ title: '', description: '', venue: '', startAt: '', endAt: '' });
+      notify('Event published.', 'saved');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not publish event.', 'error');
     }
-    setForm({ title: '', description: '', venue: '', startAt: '', endAt: '' });
-    notify('Event published.', 'saved');
   };
 
   return (
@@ -981,21 +1009,28 @@ const HotelsPage = () => {
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!profile) return;
-    const id = await createHotel({ ...form, createdBy: profile.uid } as Omit<Hotel, 'id'>);
-    if (id) {
+    try {
+      const id = await createHotel({ ...form, createdBy: profile.uid } as Omit<Hotel, 'id'>);
+      if (!id) {
+        notify('Could not save hotel.', 'error');
+        return;
+      }
+
       await logAuditEvent(profile.uid, profile.displayName, 'create', 'hotel', id, form.name);
+      setForm({
+        name: '',
+        address: '',
+        bookingUrl: '',
+        contactName: '',
+        contactEmail: '',
+        roomBlock: '',
+        rateNotes: '',
+        deadline: '',
+      });
+      notify('Hotel saved.', 'saved');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not save hotel.', 'error');
     }
-    setForm({
-      name: '',
-      address: '',
-      bookingUrl: '',
-      contactName: '',
-      contactEmail: '',
-      roomBlock: '',
-      rateNotes: '',
-      deadline: '',
-    });
-    notify('Hotel saved.', 'saved');
   };
 
   return (
@@ -1094,34 +1129,48 @@ const FlightsPage = () => {
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const id = await createFlight({
-      ownerUid: profile.uid,
-      ownerName: form.travelerName.trim() || profile.displayName,
-      groupId: profile.groupId ?? null,
-      airline: form.airline.trim(),
-      flightNumber: form.flightNumber.trim(),
-      departureAirport: form.departureAirport.trim(),
-      arrivalAirport: form.arrivalAirport.trim(),
-      departureAt: form.departureAt,
-      arrivalAt: form.arrivalAt || undefined,
-      notes: form.notes.trim() || undefined,
-      confirmationCode: form.confirmationCode.trim() || undefined,
-    });
-    if (id) {
-      await logAuditEvent(profile.uid, profile.displayName, 'create', 'flight', id, `${form.airline} ${form.flightNumber}`);
+    try {
+      const id = await createFlight({
+        ownerUid: profile.uid,
+        ownerName: form.travelerName.trim() || profile.displayName,
+        groupId: profile.groupId ?? null,
+        airline: form.airline.trim(),
+        flightNumber: form.flightNumber.trim(),
+        departureAirport: form.departureAirport.trim(),
+        arrivalAirport: form.arrivalAirport.trim(),
+        departureAt: form.departureAt,
+        arrivalAt: form.arrivalAt || undefined,
+        notes: form.notes.trim() || undefined,
+        confirmationCode: form.confirmationCode.trim() || undefined,
+      });
+      if (!id) {
+        notify('Could not save flight.', 'error');
+        return;
+      }
+
+      await logAuditEvent(
+        profile.uid,
+        profile.displayName,
+        'create',
+        'flight',
+        id,
+        `${form.airline} ${form.flightNumber}`,
+      );
+      notify('Flight saved.', 'saved');
+      setForm({
+        airline: '',
+        flightNumber: '',
+        departureAirport: '',
+        arrivalAirport: '',
+        departureAt: '',
+        arrivalAt: '',
+        travelerName: '',
+        notes: '',
+        confirmationCode: '',
+      });
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not save flight.', 'error');
     }
-    notify('Flight saved.', 'saved');
-    setForm({
-      airline: '',
-      flightNumber: '',
-      departureAirport: '',
-      arrivalAirport: '',
-      departureAt: '',
-      arrivalAt: '',
-      travelerName: '',
-      notes: '',
-      confirmationCode: '',
-    });
   };
 
   return (
@@ -1265,23 +1314,31 @@ const FlightAssetCard = ({
   });
 
   const saveEdit = async () => {
-    await updateFlight(flight.id, {
-      ...editForm,
-      arrivalAt: editForm.arrivalAt || undefined,
-      notes: editForm.notes || undefined,
-      confirmationCode: editForm.confirmationCode || undefined,
-      seat: editForm.seat || undefined,
-    });
-    await logAuditEvent(ownerUid, ownerName, 'update', 'flight', flight.id, flightLabel);
-    setEditing(false);
-    notify('Flight updated.', 'updated');
+    try {
+      await updateFlight(flight.id, {
+        ...editForm,
+        arrivalAt: editForm.arrivalAt || undefined,
+        notes: editForm.notes || undefined,
+        confirmationCode: editForm.confirmationCode || undefined,
+        seat: editForm.seat || undefined,
+      });
+      await logAuditEvent(ownerUid, ownerName, 'update', 'flight', flight.id, flightLabel);
+      setEditing(false);
+      notify('Flight updated.', 'updated');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not update flight.', 'error');
+    }
   };
 
   const onDelete = async () => {
     if (!window.confirm(`Delete "${flightLabel}"? This cannot be undone.`)) return;
-    await deleteFlight(flight.id);
-    await logAuditEvent(ownerUid, ownerName, 'delete', 'flight', flight.id, flightLabel);
-    notify('Flight removed.', 'deleted');
+    try {
+      await deleteFlight(flight.id);
+      await logAuditEvent(ownerUid, ownerName, 'delete', 'flight', flight.id, flightLabel);
+      notify('Flight removed.', 'deleted');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not delete flight.', 'error');
+    }
   };
 
   return (
@@ -1360,12 +1417,76 @@ const BulletinPage = () => {
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingBody, setEditingBody] = useState('');
   const [editingImage, setEditingImage] = useState<File | null>(null);
+  const [assetPreview, setAssetPreview] = useState<AssetRecord | null>(null);
+  const [quickDmMember, setQuickDmMember] = useState<DirectoryMember | null>(null);
+  const [quickDmText, setQuickDmText] = useState('');
+  const [quickDmSending, setQuickDmSending] = useState(false);
 
   if (!profile) {
     return null;
   }
 
+  const selfDirectoryEntry: DirectoryMember = {
+    uid: profile.uid,
+    id: profile.uid,
+    displayName: profile.displayName,
+    email: profile.email,
+    photoURL: profile.photoURL,
+    role: profile.role,
+    groupId: profile.groupId ?? null,
+  };
+
   const mentionableDocs = assets.filter((asset) => asset.ownerUid === profile.uid && asset.kind === 'document');
+
+  const openQuickDm = (memberUid: string, displayName: string) => {
+    const found = directory.find((m) => m.uid === memberUid);
+    const target: DirectoryMember = found
+      ? found
+      : {
+          uid: memberUid,
+          id: memberUid,
+          displayName: displayName || memberUid,
+          email: '',
+          photoURL: null,
+          role: 'member',
+          groupId: null,
+        };
+
+    setQuickDmMember(target);
+    setQuickDmText('');
+  };
+
+  const submitQuickDm = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!quickDmMember || !quickDmText.trim()) {
+      return;
+    }
+
+    setQuickDmSending(true);
+    try {
+      const threadId = await createOrGetDirectThread(selfDirectoryEntry, quickDmMember);
+      const participantIds = [selfDirectoryEntry.uid, quickDmMember.uid].sort();
+      const participantNames = [selfDirectoryEntry.displayName, quickDmMember.displayName].sort();
+
+      await sendThreadMessage(
+        threadId,
+        {
+          authorUid: selfDirectoryEntry.uid,
+          authorName: selfDirectoryEntry.displayName,
+          body: quickDmText.trim(),
+        },
+        participantIds,
+        participantNames,
+      );
+
+      setQuickDmMember(null);
+      setQuickDmText('');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not send message.', 'error');
+    } finally {
+      setQuickDmSending(false);
+    }
+  };
 
   const appendMention = (token: string, setValue: (value: string) => void, current: string) => {
     setValue(`${current.trimEnd()} ${token}`.trim());
@@ -1377,26 +1498,29 @@ const BulletinPage = () => {
       return;
     }
 
-    const attachment = bulletinImage
-      ? await uploadBulletinAttachment({
-          file: bulletinImage,
-          ownerUid: profile.uid,
-        })
-      : null;
+    try {
+      const attachment = bulletinImage
+        ? await uploadBulletinAttachment({
+            file: bulletinImage,
+            ownerUid: profile.uid,
+          })
+        : null;
 
-    const id = await createBulletinPost({
-      authorUid: profile.uid,
-      authorName: profile.displayName,
-      body: newPost.trim(),
-      ...(attachment ?? {}),
-    });
+      const id = await createBulletinPost({
+        authorUid: profile.uid,
+        authorName: profile.displayName,
+        body: newPost.trim(),
+        ...(attachment ?? {}),
+      });
 
-    if (id) {
-      await logAuditEvent(profile.uid, profile.displayName, 'create', 'bulletin_post', id, 'Post');
+      if (id) {
+        await logAuditEvent(profile.uid, profile.displayName, 'create', 'bulletin_post', id, 'Post');
+      }
+      setNewPost('');
+      setBulletinImage(null);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not publish post.', 'error');
     }
-    setNewPost('');
-    setBulletinImage(null);
-    notify('Post published.', 'saved');
   };
 
   const submitComment = async (event: FormEvent<HTMLFormElement>, post: BulletinPost) => {
@@ -1406,15 +1530,18 @@ const BulletinPage = () => {
       return;
     }
 
-    await addBulletinComment({
-      postId: post.id,
-      authorUid: profile.uid,
-      authorName: profile.displayName,
-      body,
-    });
+    try {
+      await addBulletinComment({
+        postId: post.id,
+        authorUid: profile.uid,
+        authorName: profile.displayName,
+        body,
+      });
 
-    setNewComments((current) => ({ ...current, [post.id]: '' }));
-    notify('Comment added.', 'saved');
+      setNewComments((current) => ({ ...current, [post.id]: '' }));
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not add comment.', 'error');
+    }
   };
 
   const startEditing = (post: BulletinPost) => {
@@ -1487,7 +1614,8 @@ const BulletinPage = () => {
   };
 
   return (
-    <section className="page-section">
+    <>
+      <section className="page-section">
       <SectionIntro eyebrow="Bulletin" title="Announcements and family discussion" body="Use the shared board for reminders, updates, and collaborative planning instead of fragmented chats." />
       <div className="content-grid two-up">
         <Card accent="warm">
@@ -1501,19 +1629,32 @@ const BulletinPage = () => {
                   const mention = getTrailingMentionQuery(newPost);
                   if (!mention) return null;
                   const q = mention.query.toLowerCase();
-                  const filtered = directory
+                  const filteredMembers = directory
                     .filter((m) => m.uid !== profile?.uid)
-                    .filter((m) => (m.displayName ?? '').toLowerCase().includes(q) || (m.email ?? '').toLowerCase().includes(q))
+                    .filter((m) => (m.displayName ?? '').toLowerCase().includes(q) || (m.email ?? '').toLowerCase().includes(q));
+
+                  const filteredDocs = mentionableDocs
+                    .filter((d) => (d.fileName ?? '').toLowerCase().includes(q))
                     .slice(0, 6);
-                  if (filtered.length === 0) return null;
+
+                  const combined = [
+                    ...filteredMembers.slice(0, 6).map((m) => ({ kind: 'member' as const, uid: m.uid, label: m.displayName })),
+                    ...filteredDocs.map((d) => ({ kind: 'doc' as const, uid: d.id, label: d.fileName })),
+                  ];
+
+                  if (combined.length === 0) return null;
 
                   return (
-                    <ul className="relationship-combobox-list" role="listbox" aria-label="Member mention suggestions">
-                      {filtered.map((m) => {
-                        const token = mentionToken({ type: 'user', id: m.uid, label: m.displayName });
+                    <ul className="relationship-combobox-list" role="listbox" aria-label="Mention suggestions">
+                      {combined.map((item) => {
+                        const token =
+                          item.kind === 'member'
+                            ? mentionToken({ type: 'user', id: item.uid, label: item.label })
+                            : mentionToken({ type: 'asset', id: item.uid, label: item.label });
+
                         return (
                           <li
-                            key={m.uid}
+                            key={`${item.kind}:${item.uid}`}
                             role="option"
                             className="relationship-combobox-option"
                             onMouseDown={(e) => e.preventDefault()}
@@ -1521,7 +1662,7 @@ const BulletinPage = () => {
                               setNewPost((current) => `${current.slice(0, mention.startIndex)}${token} `);
                             }}
                           >
-                            {m.displayName}
+                            {item.kind === 'member' ? item.label : `${item.label}`}
                           </li>
                         );
                       })}
@@ -1660,9 +1801,41 @@ const BulletinPage = () => {
                     <div className="rich-text">
                       {parseMentionSegments(post.body).map((segment, index) =>
                         segment.type === 'mention' ? (
-                          <span className={`inline-mention mention-${segment.mentionType}`} key={`${segment.value}-${index}`}>
-                            @{segment.value}
-                          </span>
+                          segment.mentionType === 'user' && segment.mentionId ? (
+                            <button
+                              type="button"
+                              className={`inline-mention mention-${segment.mentionType}`}
+                              key={`${segment.value}-${index}`}
+                              onClick={() => openQuickDm(segment.mentionId!, segment.value)}
+                            >
+                              @{segment.value}
+                            </button>
+                          ) : segment.mentionType === 'asset' && segment.mentionId ? (
+                            (() => {
+                              const asset = assets.find((a) => a.id === segment.mentionId);
+                              return asset ? (
+                                <a
+                                  href={asset.downloadUrl}
+                                  className="inline-mention mention-asset"
+                                  key={`${segment.value}-${index}`}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    setAssetPreview(asset);
+                                  }}
+                                >
+                                  @{segment.value}
+                                </a>
+                              ) : (
+                                <span className="inline-mention mention-asset" key={`${segment.value}-${index}`}>
+                                  @{segment.value}
+                                </span>
+                              );
+                            })()
+                          ) : (
+                            <span className={`inline-mention mention-${segment.mentionType}`} key={`${segment.value}-${index}`}>
+                              @{segment.value}
+                            </span>
+                          )
                         ) : (
                           <span key={`${segment.value}-${index}`}>{segment.value}</span>
                         ),
@@ -1682,9 +1855,41 @@ const BulletinPage = () => {
                         <p>
                           {parseMentionSegments(comment.body).map((segment, index) =>
                             segment.type === 'mention' ? (
-                              <span className={`inline-mention mention-${segment.mentionType ?? 'user'}`} key={`${comment.id}-${index}`}>
-                                @{segment.value}
-                              </span>
+                              segment.mentionType === 'user' && segment.mentionId ? (
+                                <button
+                                  type="button"
+                                  className={`inline-mention mention-${segment.mentionType ?? 'user'}`}
+                                  key={`${comment.id}-${index}`}
+                                  onClick={() => openQuickDm(segment.mentionId!, segment.value)}
+                                >
+                                  @{segment.value}
+                                </button>
+                              ) : segment.mentionType === 'asset' && segment.mentionId ? (
+                                (() => {
+                                  const asset = assets.find((a) => a.id === segment.mentionId);
+                                  return asset ? (
+                                    <a
+                                      href={asset.downloadUrl}
+                                      className="inline-mention mention-asset"
+                                      key={`${comment.id}-${index}`}
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        setAssetPreview(asset);
+                                      }}
+                                    >
+                                      @{segment.value}
+                                    </a>
+                                  ) : (
+                                    <span className="inline-mention mention-asset" key={`${comment.id}-${index}`}>
+                                      @{segment.value}
+                                    </span>
+                                  );
+                                })()
+                              ) : (
+                                <span className={`inline-mention mention-${segment.mentionType ?? 'user'}`} key={`${comment.id}-${index}`}>
+                                  @{segment.value}
+                                </span>
+                              )
                             ) : (
                               <span key={`${comment.id}-${index}`}>{segment.value}</span>
                             ),
@@ -1705,19 +1910,31 @@ const BulletinPage = () => {
                       const mention = getTrailingMentionQuery(value);
                       if (!mention) return null;
                       const q = mention.query.toLowerCase();
-                      const filtered = directory
+                      const filteredMembers = directory
                         .filter((m) => m.uid !== profile?.uid)
-                        .filter((m) => (m.displayName ?? '').toLowerCase().includes(q) || (m.email ?? '').toLowerCase().includes(q))
+                        .filter((m) => (m.displayName ?? '').toLowerCase().includes(q) || (m.email ?? '').toLowerCase().includes(q));
+
+                      const filteredDocs = mentionableDocs
+                        .filter((d) => (d.fileName ?? '').toLowerCase().includes(q))
                         .slice(0, 6);
-                      if (filtered.length === 0) return null;
+
+                      const combined = [
+                        ...filteredMembers.slice(0, 6).map((m) => ({ kind: 'member' as const, uid: m.uid, label: m.displayName })),
+                        ...filteredDocs.map((d) => ({ kind: 'doc' as const, uid: d.id, label: d.fileName })),
+                      ];
+
+                      if (combined.length === 0) return null;
 
                       return (
                         <ul className="relationship-combobox-list" role="listbox" aria-label="Mention suggestions">
-                          {filtered.map((m) => {
-                            const token = mentionToken({ type: 'user', id: m.uid, label: m.displayName });
+                          {combined.map((item) => {
+                            const token =
+                              item.kind === 'member'
+                                ? mentionToken({ type: 'user', id: item.uid, label: item.label })
+                                : mentionToken({ type: 'asset', id: item.uid, label: item.label });
                             return (
                               <li
-                                key={m.uid}
+                                key={`${item.kind}:${item.uid}`}
                                 role="option"
                                 className="relationship-combobox-option"
                                 onMouseDown={(e) => e.preventDefault()}
@@ -1729,7 +1946,7 @@ const BulletinPage = () => {
                                   });
                                 }}
                               >
-                                {m.displayName}
+                                {item.kind === 'member' ? item.label : `${item.label}`}
                               </li>
                             );
                           })}
@@ -1747,20 +1964,110 @@ const BulletinPage = () => {
         </Card>
       </div>
     </section>
+    <AssetPreviewModal asset={assetPreview} onClose={() => setAssetPreview(null)} />
+    <QuickMessageModal
+      member={quickDmMember}
+      text={quickDmText}
+      sending={quickDmSending}
+      onTextChange={setQuickDmText}
+      onSubmit={submitQuickDm}
+      onClose={() => {
+        setQuickDmMember(null);
+        setQuickDmText('');
+      }}
+    />
+    </>
   );
 };
+
+const participantKeyFor = (ids: string[]) => [...ids].sort().join('__');
 
 const MessagesPage = () => {
   const { profile } = useAuth();
   const { notify } = useNotification();
+  const navigate = useNavigate();
+  const { threadId: threadIdParam } = useParams<{ threadId?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const withUid = searchParams.get('with');
   const { data: directory } = useDirectory();
   const { data: threads } = useThreads(profile?.uid ?? '');
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const selectedThreadId = threadIdParam ?? null;
+  const [pendingThreadMember, setPendingThreadMember] = useState<DirectoryMember | null>(null);
   const [messageText, setMessageText] = useState('');
   const [memberSearch, setMemberSearch] = useState('');
   const deferredSearch = useDeferredValue(memberSearch);
-  const selectedThread = threads.find((thread) => thread.id === selectedThreadId) ?? threads[0] ?? null;
+
+  const virtualThread: Thread | null =
+    selectedThreadId && pendingThreadMember && profile
+      ? {
+          id: selectedThreadId,
+          participantIds: [profile.uid, pendingThreadMember.uid].sort(),
+          participantKey: participantKeyFor([profile.uid, pendingThreadMember.uid]),
+          participantNames: [profile.displayName ?? '', pendingThreadMember.displayName ?? ''].sort(),
+        }
+      : null;
+  const selectedThread: Thread | null =
+    threads.find((t) => t.id === selectedThreadId) ?? virtualThread ?? null;
   const { data: messages } = useThreadMessages(selectedThread?.id ?? null);
+
+  useEffect(() => {
+    if (selectedThreadId && threads.some((t) => t.id === selectedThreadId)) {
+      // Avoid synchronous setState directly inside an effect to satisfy lint rules.
+      void Promise.resolve().then(() => setPendingThreadMember(null));
+    }
+  }, [selectedThreadId, threads]);
+
+  const withHandledRef = useRef(false);
+  const lastWithUidRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!withUid || !profile) return;
+    if (lastWithUidRef.current !== withUid) {
+      lastWithUidRef.current = withUid;
+      withHandledRef.current = false;
+    }
+    if (withHandledRef.current) return;
+    const member = directory.find((m) => m.uid === withUid);
+    if (!member || member.uid === profile.uid) {
+      setSearchParams((prev: URLSearchParams) => {
+        const next = new URLSearchParams(prev);
+        next.delete('with');
+        return next;
+      }, { replace: true });
+      withHandledRef.current = true;
+      return;
+    }
+    withHandledRef.current = true;
+    const self: DirectoryMember = {
+      uid: profile.uid,
+      id: profile.uid,
+      displayName: profile.displayName,
+      email: profile.email,
+      photoURL: profile.photoURL,
+      role: profile.role,
+      groupId: profile.groupId ?? null,
+    };
+    // Avoid synchronous setState directly inside an effect to satisfy lint rules.
+    void Promise.resolve().then(() => setPendingThreadMember(member));
+    createOrGetDirectThread(self, member)
+      .then((threadId) => {
+        setSearchParams((prev: URLSearchParams) => {
+          const next = new URLSearchParams(prev);
+          next.delete('with');
+          return next;
+        }, { replace: true });
+        navigate(`/app/messages/${threadId}`, { replace: true });
+      })
+      .catch((err) => {
+        notify(err instanceof Error ? err.message : 'Could not open conversation.', 'error');
+        setPendingThreadMember(null);
+        withHandledRef.current = false;
+        setSearchParams((prev: URLSearchParams) => {
+          const next = new URLSearchParams(prev);
+          next.delete('with');
+          return next;
+        }, { replace: true });
+      });
+  }, [withUid, profile, directory, navigate, setSearchParams, notify]);
 
   if (!profile) {
     return null;
@@ -1783,11 +2090,25 @@ const MessagesPage = () => {
   );
 
   const startThread = async (member: DirectoryMember) => {
-    const threadId = await createOrGetDirectThread(selfDirectoryEntry, member);
-    const existing = threads.find((thread) => thread.id === threadId);
-    setSelectedThreadId(
-      existing?.id ?? [profile.uid, member.uid].sort().join('__'),
-    );
+    setPendingThreadMember(member);
+    try {
+      const threadId = await createOrGetDirectThread(selfDirectoryEntry, member);
+      navigate(`/app/messages/${threadId}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not start conversation.';
+      notify(message, 'error');
+      setPendingThreadMember(null);
+    }
+  };
+
+  const selectThread = (threadId: string) => {
+    setPendingThreadMember(null);
+    navigate(`/app/messages/${threadId}`);
+  };
+
+  const backToList = () => {
+    setPendingThreadMember(null);
+    navigate('/app/messages');
   };
 
   const onSend = async (event: FormEvent<HTMLFormElement>) => {
@@ -1795,26 +2116,32 @@ const MessagesPage = () => {
     if (!selectedThread || !messageText.trim()) {
       return;
     }
-
-    await sendThreadMessage(
-      selectedThread.id,
-      {
-        authorUid: profile.uid,
-        authorName: profile.displayName,
-        body: messageText.trim(),
-      },
-      selectedThread.participantIds,
-      selectedThread.participantNames,
-    );
-    setMessageText('');
-    notify('Message sent.', 'saved');
+    try {
+      await sendThreadMessage(
+        selectedThread.id,
+        {
+          authorUid: profile.uid,
+          authorName: profile.displayName,
+          body: messageText.trim(),
+        },
+        selectedThread.participantIds,
+        selectedThread.participantNames,
+      );
+      setMessageText('');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not send message.';
+      notify(message, 'error');
+    }
   };
 
+  const conversationTitle =
+    selectedThread?.participantNames.filter((n) => n !== profile.displayName).join(', ') || 'Conversation';
+
   return (
-    <section className="page-section">
+    <section className="page-section messages-page">
       <SectionIntro eyebrow="Messages" title="Direct coordination threads" body="Use direct messages for side conversations that should not live on the public bulletin board." />
-      <div className="messages-layout">
-        <Card>
+      <div className={`messages-layout ${selectedThreadId ? 'conversation-open' : ''}`}>
+        <Card className="messages-panel-start">
           <SectionHeader title="Start a thread" meta="Approved members only" />
           <label>
             Search members
@@ -1833,24 +2160,33 @@ const MessagesPage = () => {
           </div>
         </Card>
 
-        <Card>
+        <Card className="messages-panel-threads">
           <SectionHeader title="Your threads" meta={`${threads.length} active`} />
           <div className="list-stack compact">
-            {threads.map((thread) => (
-              <button
-                className={`thread-card ${selectedThread?.id === thread.id ? 'selected' : ''}`}
-                key={thread.id}
-                onClick={() => setSelectedThreadId(thread.id)}
-              >
-                <strong>{thread.participantNames.filter((name) => name !== profile.displayName).join(', ') || 'Your thread'}</strong>
-                <p>{thread.lastMessageText ?? 'No messages yet'}</p>
-              </button>
-            ))}
+            {threads.length === 0 ? (
+              <p className="helper-text">No conversations yet. Start one by choosing a member on the left.</p>
+            ) : (
+              threads.map((thread) => (
+                <button
+                  className={`thread-card ${selectedThread?.id === thread.id ? 'selected' : ''}`}
+                  key={thread.id}
+                  onClick={() => selectThread(thread.id)}
+                >
+                  <strong>{thread.participantNames.filter((name) => name !== profile.displayName).join(', ') || 'Your thread'}</strong>
+                  <p>{thread.lastMessageText ?? 'No messages yet'}</p>
+                </button>
+              ))
+            )}
           </div>
         </Card>
 
-        <Card accent="cool">
-          <SectionHeader title={selectedThread ? 'Conversation' : 'Select a thread'} meta={selectedThread ? relativeTime(selectedThread.updatedAt) : 'No thread selected'} />
+        <Card accent="cool" className="messages-panel-conversation">
+          <div className="messages-conversation-header">
+            <button type="button" className="messages-back-button ghost-button" onClick={backToList} aria-label="Back to conversations">
+              Back
+            </button>
+            <SectionHeader title={selectedThread ? conversationTitle : 'Select a thread'} meta={selectedThread ? relativeTime(selectedThread.updatedAt) : 'No thread selected'} />
+          </div>
           {selectedThread ? (
             <>
               <div className="message-stack">
@@ -1895,18 +2231,28 @@ const FilesPage = () => {
       return;
     }
 
-    const kind = file.type === 'application/pdf' ? 'document' : 'image';
-    const id = await uploadAsset({ file, kind, ownerUid: profile.uid, ownerName: profile.displayName });
-    if (id) await logAuditEvent(profile.uid, profile.displayName, 'create', 'asset', id, file.name);
-    notify('File uploaded.', 'saved');
-    event.currentTarget.value = '';
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const kind = isPdf ? 'document' : 'image';
+    try {
+      const id = await uploadAsset({ file, kind, ownerUid: profile.uid, ownerName: profile.displayName });
+      if (id) await logAuditEvent(profile.uid, profile.displayName, 'create', 'asset', id, file.name);
+      notify('File uploaded.', 'saved');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'File upload failed.', 'error');
+    } finally {
+      event.currentTarget.value = '';
+    }
   };
 
   const onDeleteAsset = async (asset: AssetRecord) => {
     if (!window.confirm(`Delete "${asset.fileName}"? This cannot be undone.`)) return;
-    await deleteAsset(asset);
-    await logAuditEvent(profile.uid, profile.displayName, 'delete', 'asset', asset.id, asset.fileName);
-    notify('File removed.', 'deleted');
+    try {
+      await deleteAsset(asset);
+      await logAuditEvent(profile.uid, profile.displayName, 'delete', 'asset', asset.id, asset.fileName);
+      notify('File removed.', 'deleted');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not delete file.', 'error');
+    }
   };
 
   return (
@@ -2824,23 +3170,31 @@ const EventAssetCard = ({
   };
 
   const saveEdit = async () => {
-    await updateEvent(eventItem.id, {
-      title: editForm.title,
-      description: editForm.description,
-      venue: editForm.venue,
-      startAt: editForm.startAt,
-      endAt: editForm.endAt || undefined,
-    });
-    await logAuditEvent(ownerUid, ownerName, 'update', 'event', eventItem.id, eventItem.title);
-    setEditingEventId(null);
-    notify('Event updated.', 'updated');
+    try {
+      await updateEvent(eventItem.id, {
+        title: editForm.title,
+        description: editForm.description,
+        venue: editForm.venue,
+        startAt: editForm.startAt,
+        endAt: editForm.endAt || undefined,
+      });
+      await logAuditEvent(ownerUid, ownerName, 'update', 'event', eventItem.id, eventItem.title);
+      setEditingEventId(null);
+      notify('Event updated.', 'updated');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not update event.', 'error');
+    }
   };
 
   const onDelete = async () => {
     if (!window.confirm(`Delete "${eventItem.title}"? This cannot be undone.`)) return;
-    await deleteEvent(eventItem.id);
-    await logAuditEvent(ownerUid, ownerName, 'delete', 'event', eventItem.id, eventItem.title);
-    notify('Event removed.', 'deleted');
+    try {
+      await deleteEvent(eventItem.id);
+      await logAuditEvent(ownerUid, ownerName, 'delete', 'event', eventItem.id, eventItem.title);
+      notify('Event removed.', 'deleted');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not delete event.', 'error');
+    }
   };
 
   return (
@@ -2954,20 +3308,28 @@ const HotelAssetCard = ({
   const canEdit = canManage;
 
   const saveEdit = async () => {
-    await updateHotel(hotel.id, {
-      ...editForm,
-      deadline: editForm.deadline || undefined,
-    });
-    await logAuditEvent(ownerUid, ownerName, 'update', 'hotel', hotel.id, hotel.name);
-    setEditing(false);
-    notify('Hotel updated.', 'updated');
+    try {
+      await updateHotel(hotel.id, {
+        ...editForm,
+        deadline: editForm.deadline || undefined,
+      });
+      await logAuditEvent(ownerUid, ownerName, 'update', 'hotel', hotel.id, hotel.name);
+      setEditing(false);
+      notify('Hotel updated.', 'updated');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not update hotel.', 'error');
+    }
   };
 
   const onDelete = async () => {
     if (!window.confirm(`Delete "${hotel.name}"? This cannot be undone.`)) return;
-    await deleteHotel(hotel.id);
-    await logAuditEvent(ownerUid, ownerName, 'delete', 'hotel', hotel.id, hotel.name);
-    notify('Hotel removed.', 'deleted');
+    try {
+      await deleteHotel(hotel.id);
+      await logAuditEvent(ownerUid, ownerName, 'delete', 'hotel', hotel.id, hotel.name);
+      notify('Hotel removed.', 'deleted');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not delete hotel.', 'error');
+    }
   };
 
   return (
@@ -3070,27 +3432,37 @@ const AssociatedAssetSection = ({
       return;
     }
 
-    const kind = file.type === 'application/pdf' ? 'document' : 'image';
-    const id = await uploadAsset({
-      file,
-      kind,
-      ownerUid,
-      ownerName,
-      description,
-      relatedType,
-      relatedId,
-      relatedLabel,
-    });
-    if (id) await logAuditEvent(ownerUid, ownerName, 'create', 'asset', id, file.name);
-    setDescription('');
-    notify('Attachment uploaded.', 'saved');
-    event.currentTarget.value = '';
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    const kind = isPdf ? 'document' : 'image';
+    try {
+      const id = await uploadAsset({
+        file,
+        kind,
+        ownerUid,
+        ownerName,
+        description,
+        relatedType,
+        relatedId,
+        relatedLabel,
+      });
+      if (id) await logAuditEvent(ownerUid, ownerName, 'create', 'asset', id, file.name);
+      setDescription('');
+      notify('Attachment uploaded.', 'saved');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Attachment upload failed.', 'error');
+    } finally {
+      event.currentTarget.value = '';
+    }
   };
 
   const onDelete = async (asset: AssetRecord) => {
-    await deleteAsset(asset);
-    await logAuditEvent(ownerUid, ownerName, 'delete', 'asset', asset.id, asset.fileName);
-    notify('File removed.', 'deleted');
+    try {
+      await deleteAsset(asset);
+      await logAuditEvent(ownerUid, ownerName, 'delete', 'asset', asset.id, asset.fileName);
+      notify('File removed.', 'deleted');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not delete file.', 'error');
+    }
   };
 
   return (
@@ -3149,41 +3521,6 @@ const AssociatedAssetSection = ({
         )}
       </div>
     </section>
-  );
-};
-
-const AssetPreviewModal = ({
-  asset,
-  onClose,
-}: {
-  asset: AssetRecord | null;
-  onClose: () => void;
-}) => {
-  if (!asset) {
-    return null;
-  }
-
-  return (
-    <div className="asset-modal-backdrop" onClick={onClose} role="presentation">
-      <div className="asset-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
-        <div className="section-header">
-          <div>
-            <h2>{asset.fileName}</h2>
-            <p className="helper-text">{asset.description || `${asset.relatedLabel ?? 'Attachment'} · ${asset.kind}`}</p>
-          </div>
-          <button className="ghost-button" onClick={onClose} type="button">
-            Close
-          </button>
-        </div>
-        <div className="asset-modal-body">
-          {asset.kind === 'image' ? (
-            <img alt={asset.fileName} className="asset-modal-image" src={asset.downloadUrl} />
-          ) : (
-            <iframe className="asset-modal-frame" src={asset.downloadUrl} title={asset.fileName} />
-          )}
-        </div>
-      </div>
-    </div>
   );
 };
 

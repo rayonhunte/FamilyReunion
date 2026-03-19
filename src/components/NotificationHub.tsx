@@ -45,6 +45,39 @@ export function NotificationHub() {
 
   const buildId = env.buildId;
 
+  const safeReadJsonArray = (raw: string | null): string[] => {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed.filter((x) => typeof x === 'string') as string[]) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const bulletinPostSeenKey = myUid ? `familyreunion:seen_bulletin_posts:${myUid}` : null;
+  const bulletinCommentSeenKey = myUid ? `familyreunion:seen_bulletin_comments:${myUid}` : null;
+
+  const loadSeenPosts = (): Set<string> => {
+    if (!bulletinPostSeenKey) return new Set();
+    return new Set(safeReadJsonArray(localStorage.getItem(bulletinPostSeenKey)));
+  };
+
+  const loadSeenComments = (): Set<string> => {
+    if (!bulletinCommentSeenKey) return new Set();
+    return new Set(safeReadJsonArray(localStorage.getItem(bulletinCommentSeenKey)));
+  };
+
+  const persistSeenPosts = (ids: Set<string>) => {
+    if (!bulletinPostSeenKey) return;
+    localStorage.setItem(bulletinPostSeenKey, JSON.stringify(Array.from(ids)));
+  };
+
+  const persistSeenComments = (ids: Set<string>) => {
+    if (!bulletinCommentSeenKey) return;
+    localStorage.setItem(bulletinCommentSeenKey, JSON.stringify(Array.from(ids)));
+  };
+
   // Build/version notification (in-app + phone if permitted).
   useEffect(() => {
     if (isDemoMode) return;
@@ -99,11 +132,16 @@ export function NotificationHub() {
     const nextPostIds = new Set(posts.map((p) => p.id));
 
     if (!postInitializedRef.current) {
+      // Firestore can briefly deliver an empty snapshot on mount; if we initialize
+      // from an empty set, the first real snapshot later looks "new" and re-notifies.
+      // Wait for the first non-empty snapshot, and also merge with persisted IDs.
+      if (nextPostIds.size === 0) return;
       postInitializedRef.current = true;
-      seenPostIdsRef.current = nextPostIds;
+      seenPostIdsRef.current = new Set([...loadSeenPosts(), ...nextPostIds]);
       return;
     }
 
+    let didNotify = false;
     for (const post of posts as BulletinPost[]) {
       if (!seenPostIdsRef.current.has(post.id)) {
         if (post.authorUid !== myUid) {
@@ -113,10 +151,14 @@ export function NotificationHub() {
           notify(body, 'updated');
           maybeSystemNotify(title, body);
         }
+        seenPostIdsRef.current.add(post.id);
+        didNotify = true;
       }
     }
 
-    seenPostIdsRef.current = nextPostIds;
+    if (didNotify) {
+      persistSeenPosts(seenPostIdsRef.current);
+    }
   }, [isDemoMode, myUid, notify, posts, profile]);
 
   // Bulletin replies/comments (@reply): only the mentioned user gets notified.
@@ -128,11 +170,14 @@ export function NotificationHub() {
     const nextCommentIds = new Set(comments.map((c) => c.id));
 
     if (!commentInitializedRef.current) {
+      // See post logic for why we wait for non-empty.
+      if (nextCommentIds.size === 0) return;
       commentInitializedRef.current = true;
-      seenCommentIdsRef.current = nextCommentIds;
+      seenCommentIdsRef.current = new Set([...loadSeenComments(), ...nextCommentIds]);
       return;
     }
 
+    let didNotify = false;
     for (const comment of comments as BulletinComment[]) {
       if (!seenCommentIdsRef.current.has(comment.id)) {
         const mentionedUids = extractMentionedUserUids(comment.body);
@@ -143,10 +188,14 @@ export function NotificationHub() {
           notify(body, 'updated');
           maybeSystemNotify(title, body);
         }
+        seenCommentIdsRef.current.add(comment.id);
+        didNotify = true;
       }
     }
 
-    seenCommentIdsRef.current = nextCommentIds;
+    if (didNotify) {
+      persistSeenComments(seenCommentIdsRef.current);
+    }
   }, [comments, isDemoMode, myUid, notify, profile]);
 
   // This component is intentionally headless.
