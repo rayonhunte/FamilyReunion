@@ -1,16 +1,19 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { Link, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ReactFlow, ReactFlowProvider, Controls, MiniMap, Handle, BaseEdge, EdgeLabelRenderer, getSmoothStepPath, applyNodeChanges, applyEdgeChanges, Position, type Node as FlowNode, type Edge as FlowEdge, type NodeProps, type EdgeProps } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useNotification } from '../contexts/useNotification';
 import { useAuth } from '../hooks/useAuth';
 import { callBackend, requestSyncMyDirectory } from '../lib/functionsApi';
-import { env } from '../lib/env';
-import { NotificationHub } from '../components/NotificationHub';
 import { AssetPreviewModal } from '../components/AssetPreviewModal';
 import { QuickMessageModal } from '../components/QuickMessageModal';
-import { requestSystemNotificationPermission } from '../lib/systemNotifications';
-import { PortalRoutes } from './routes/PortalRoutes';
+import { PortalShell } from './layout/PortalShell';
+import { Card, SectionHeader, SectionIntro, StatCard } from '../components/ui/PortalPrimitives';
+import { FullscreenState } from './components/FullscreenState';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { LandingPage } from './pages/LandingPage';
+import { PendingPage } from './pages/PendingPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import {
   addBulletinComment,
   createBulletinPost,
@@ -26,7 +29,6 @@ import {
   deleteHotel,
   deleteRelationship,
   deleteStorageFile,
-  getProfileImageDownloadUrl,
   logAuditEvent,
   saveRegistration,
   sendThreadMessage,
@@ -40,7 +42,6 @@ import {
   uploadAsset,
   uploadBulletinAttachment,
   uploadProfileImage,
-  updateProfilePhotoUrl,
   useAssociatedAssets,
   useAssets,
   useAuditLogs,
@@ -53,11 +54,12 @@ import {
   useFlights,
   useHotels,
   usePendingApprovals,
+  useRegistrations,
   useThreadMessages,
   useThreads,
   useUserRegistration,
 } from '../lib/firestore';
-import { formatDate, formatDateTime, formatFileSize, relativeTime } from '../lib/format';
+import { formatDate, formatDateTime, formatFileSize, relativeTime, toDate } from '../lib/format';
 import type {
   AssetRecord,
   BulletinPost,
@@ -110,26 +112,6 @@ const parseMentionSegments = (text: string) => {
   return segments;
 };
 
-const primaryNavItems: { label: string; to: string; roles?: ('admin' | 'organizer')[] }[] = [
-  { label: 'Dashboard', to: '/app' },
-  { label: 'Profile', to: '/app/profile' },
-  { label: 'Organizer', to: '/app/organizer', roles: ['admin', 'organizer'] },
-  { label: 'Admin', to: '/app/admin', roles: ['admin'] },
-];
-
-const menuNavItems: { label: string; to: string; adminOnly?: boolean }[] = [
-  { label: 'Registration', to: '/app/registration' },
-  { label: 'Events', to: '/app/events' },
-  { label: 'Hotels', to: '/app/hotels' },
-  { label: 'Flights', to: '/app/flights' },
-  { label: 'Bulletin', to: '/app/bulletin' },
-  { label: 'Messages', to: '/app/messages' },
-  { label: 'Files', to: '/app/files' },
-  { label: 'Family tree', to: '/app/family-tree' },
-  { label: 'Help', to: '/app/help' },
-  { label: 'Audit log', to: '/app/audit', adminOnly: true },
-];
-
 export const App = () => {
   const { loading, profile, user } = useAuth();
 
@@ -150,7 +132,22 @@ export const App = () => {
         path="/app/*"
         element={
           <ProtectedRoute>
-            <PortalShell />
+            <PortalShell
+              overview={<OverviewPage />}
+              profile={<ProfilePage />}
+              registration={<RegistrationPage />}
+              events={<EventsPage />}
+              hotels={<HotelsPage />}
+              flights={<FlightsPage />}
+              bulletin={<BulletinPage />}
+              messages={<MessagesPage />}
+              files={<FilesPage />}
+              familyTree={<FamilyTreePage />}
+              help={<HelpPage />}
+              audit={<AuditPage />}
+              organizer={<OrganizerPage />}
+              admin={<AdminPage />}
+            />
           </ProtectedRoute>
         }
       />
@@ -160,315 +157,18 @@ export const App = () => {
   );
 };
 
-const ProtectedRoute = ({ children }: { children: ReactNode }) => {
-  const { user, profile } = useAuth();
-  const location = useLocation();
-
-  if (!user) {
-    return <Navigate to="/" replace state={{ from: location.pathname }} />;
-  }
-
-  if (profile?.status !== 'approved') {
-    return <Navigate to="/pending" replace />;
-  }
-
-  return children;
-};
-
-const FullscreenState = ({ title, description }: { title: string; description: string }) => (
-  <main className="fullscreen-shell">
-    <div className="state-card">
-      <p className="eyebrow">Family Reunion Portal</p>
-      <h1>{title}</h1>
-      <p>{description}</p>
-    </div>
-  </main>
-);
-
-const NotFoundPage = () => {
-  const { user, profile } = useAuth();
-
-  return (
-    <main className="not-found-shell">
-      <div className="not-found-card">
-        <p className="eyebrow">Family Reunion Portal</p>
-        <h1>Page not found</h1>
-        <p className="not-found-description">
-          The page you’re looking for doesn’t exist or has been moved.
-        </p>
-        <img
-          src="/404_page.png"
-          alt="Person searching with a magnifying glass next to a 404 sign in the jungle"
-          className="not-found-image"
-        />
-        <div className="not-found-actions">
-          <Link to={user && profile?.status === 'approved' ? '/app' : '/'} className="cta-button">
-            {user && profile?.status === 'approved' ? 'Back to portal' : 'Back to home'}
-          </Link>
-        </div>
-      </div>
-    </main>
-  );
-};
-
-const LandingPage = () => {
-  const { profile, signInWithGoogle, error, isDemoMode } = useAuth();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (profile?.status === 'pending') {
-      navigate('/pending', { replace: true });
-    }
-  }, [navigate, profile]);
-
-  return (
-    <main className="landing-page">
-      <section className="landing-frame">
-        <header className="topbar landing-bar">
-          <div className="brand-lockup">
-            <p className="eyebrow">Private Member Hub</p>
-            <h1>Family Reunion Retreat</h1>
-          </div>
-          <button className="cta-button" onClick={() => void signInWithGoogle()}>
-            {isDemoMode ? 'Open demo portal' : 'Login or Request Access with Google'}
-          </button>
-        </header>
-
-        <section className="hero-card">
-          <div className="hero-copy">
-            <p className="eyebrow">Built for one reunion team</p>
-            <h2>Welcome home, family.</h2>
-            <p>
-              This is the place for reunion details, schedules, hotels, registration, messages, and shared memories.
-              Sign in with Google to request access, or enter the portal if you already have approval.
-            </p>
-            <div className="hero-actions">
-              <button className="cta-button" onClick={() => void signInWithGoogle()}>
-                {isDemoMode ? 'Open demo portal' : 'Login or Request Access with Google'}
-              </button>
-            </div>
-          </div>
-          <div className="hero-visual" aria-hidden="true">
-            <div className="hero-stack">
-              <article className="floating-card">
-                <span className="pill">Invites</span>
-                <strong>Open signup with approval</strong>
-                <p>New members request access, admins approve, and roles stay controlled.</p>
-              </article>
-              <article className="floating-card">
-                <span className="pill">Hotels</span>
-                <strong>Room block details in one panel</strong>
-                <p>Booking links, deadlines, addresses, and notes stay current for everyone.</p>
-              </article>
-              <article className="floating-card">
-                <span className="pill">Bulletin</span>
-                <strong>Messages, comments, and file uploads</strong>
-                <p>Collect reminders, PDFs, and images without exposing backend secrets.</p>
-              </article>
-            </div>
-          </div>
-        </section>
-
-        {error ? <p className="inline-error">{error}</p> : null}
-      </section>
-    </main>
-  );
-};
-
-const PendingPage = () => {
-  const { profile, signOutUser, isDemoMode } = useAuth();
-
-  return (
-    <main className="fullscreen-shell">
-      <div className="state-card">
-        <p className="eyebrow">Approval queue</p>
-        <h1>{isDemoMode ? 'Demo mode is active' : 'Your access request is waiting for approval'}</h1>
-        <p>
-          {isDemoMode
-            ? 'Firebase is not connected, so the app is showing an approved demo profile for previewing the portal.'
-            : `${profile?.displayName ?? 'Your account'} has been created. An admin must approve your member access before you can view reunion details.`}
-        </p>
-        <div className="stack-row">
-          <button className="cta-button" onClick={() => void signOutUser()}>
-            Sign out
-          </button>
-        </div>
-      </div>
-    </main>
-  );
-};
-
-const PortalShell = () => {
-  const { profile, signOutUser, isDemoMode } = useAuth();
-  const location = useLocation();
-  const isAdmin = profile?.role === 'admin';
-  const isOrganizer = profile?.role === 'organizer';
-  const canAccessOrganizerHub = isAdmin || isOrganizer;
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [phoneNotifPermission, setPhoneNotifPermission] = useState<NotificationPermission | null>(() => {
-    if (typeof Notification === 'undefined') return null;
-    return Notification.permission;
-  });
-
-  /* Close drawer when route changes (browser back, etc.) */
-  useEffect(() => {
-    const t = requestAnimationFrame(() => setMenuOpen(false));
-    return () => cancelAnimationFrame(t);
-  }, [location.pathname]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onKey = (e: Event) => {
-      if ((e as unknown as { key: string }).key === 'Escape') setMenuOpen(false);
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [menuOpen]);
-
-  const enablePhoneNotifications = async () => {
-    const perm = await requestSystemNotificationPermission();
-    setPhoneNotifPermission(perm);
-  };
-
-  const checkForUpdates = () => {
-    // "Hard reload": force a full page refresh with a cache-busting query param.
-    // This ensures Vite/Service Worker/browser caches don't prevent updated bundles from loading.
-    const url = new URL(window.location.href);
-    url.searchParams.set('check', String(Date.now()));
-    window.location.replace(url.toString());
-  };
-
-  const visiblePrimary = primaryNavItems.filter((item) => {
-    if (!item.roles?.length) return true;
-    if (isAdmin && item.roles.includes('admin')) return true;
-    if (isOrganizer && item.roles.includes('organizer')) return true;
-    return false;
-  });
-
-  const visibleMenu = menuNavItems.filter((item) => !item.adminOnly || isAdmin);
-
-  return (
-    <div className="portal-page">
-      <header className="topbar portal-bar">
-        <div className="brand-lockup">
-          <p className="eyebrow">Family Reunion</p>
-          <h2>Member Portal</h2>
-          {env.buildId ? <p className="build-id-under-portal">Build {env.buildId}</p> : null}
-        </div>
-        <nav className="hero-nav portal-nav portal-nav-primary" aria-label="Main navigation">
-          <button
-            type="button"
-            className="portal-nav-menu-btn"
-            aria-expanded={menuOpen}
-            aria-controls="portal-nav-menu"
-            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-            onClick={() => setMenuOpen((o) => !o)}
-          >
-            Menu
-          </button>
-          {visiblePrimary.map((item) => (
-            <NavLink key={item.to} to={item.to} end={item.to === '/app'}>
-              {item.label}
-            </NavLink>
-          ))}
-          <button
-            type="button"
-            className="ghost-button portal-nav-check-updates"
-            onClick={checkForUpdates}
-            aria-label="Check for updates"
-          >
-            Check for updates
-          </button>
-        </nav>
-        <div className="portal-actions">
-          <div className="portal-actions-right">
-            <button className="ghost-button" onClick={() => void signOutUser()}>
-              Sign out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {menuOpen ? (
-        <>
-          <div
-            className="portal-nav-backdrop"
-            onClick={() => setMenuOpen(false)}
-            onKeyDown={(e) => e.key === 'Escape' && setMenuOpen(false)}
-            role="presentation"
-            aria-hidden
-          />
-          <div
-            id="portal-nav-menu"
-            className="portal-nav-drawer"
-            role="dialog"
-            aria-modal="true"
-            aria-label="More pages"
-          >
-            <div className="portal-nav-drawer-head">
-              <span className="portal-nav-drawer-title">More</span>
-              <button type="button" className="ghost-button" onClick={() => setMenuOpen(false)}>
-                Close
-              </button>
-            </div>
-            <div className="portal-nav-drawer-profile">
-              <strong>{profile?.displayName}</strong>
-              <p className="helper-text">{profile?.role}</p>
-              {isDemoMode ? <span className="pill soft">Demo mode</span> : null}
-            </div>
-            <nav className="portal-nav-drawer-links" aria-label="Additional navigation">
-              {visibleMenu.map((item) => (
-                <NavLink key={item.to} to={item.to} onClick={() => setMenuOpen(false)}>
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
-            {phoneNotifPermission !== null ? (
-              <div className="portal-nav-drawer-actions">
-                <button
-                  className="ghost-button"
-                  type="button"
-                  onClick={() => void enablePhoneNotifications()}
-                  disabled={isDemoMode}
-                  aria-label="Enable phone notifications"
-                >
-                  {phoneNotifPermission === 'granted' ? 'Phone notifications enabled' : 'Enable phone notifications'}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </>
-      ) : null}
-
-      <main className="content-shell portal-content">
-        <NotificationHub />
-        <PortalRoutes
-          overview={<OverviewPage />}
-          profile={<ProfilePage />}
-          registration={<RegistrationPage />}
-          events={<EventsPage />}
-          hotels={<HotelsPage />}
-          flights={<FlightsPage />}
-          bulletin={<BulletinPage />}
-          messages={<MessagesPage />}
-          files={<FilesPage />}
-          familyTree={<FamilyTreePage />}
-          help={<HelpPage />}
-          audit={isAdmin ? <AuditPage /> : <Navigate to="/app" replace />}
-          organizer={canAccessOrganizerHub ? <OrganizerPage /> : <Navigate to="/app" replace />}
-          admin={isAdmin ? <AdminPage /> : <Navigate to="/app" replace />}
-        />
-      </main>
-    </div>
-  );
-};
-
 const OverviewPage = () => {
-  const { profile } = useAuth();
   const { data: events } = useEvents();
   const { data: hotels } = useHotels();
   const { data: posts } = useBulletinPosts();
   const { data: assets } = useAssets();
+  const { data: registrations } = useRegistrations();
+  const [nowTs, setNowTs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowTs(Date.now()), 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const stripMentionTokens = (text: string) =>
     text.replace(/@\[(user|asset|event):[^:\]]+:[^\]]+]/g, (_m, _t1: string, t2: string) => t2).trim();
@@ -478,80 +178,130 @@ const OverviewPage = () => {
     ? `${stripMentionTokens(latestPost.body ?? '').slice(0, 120)}${stripMentionTokens(latestPost.body ?? '').length > 120 ? '…' : ''}`
     : '';
 
-  return (
-    <section className="page-section">
-      <SectionIntro
-        eyebrow="Dashboard"
-        title={`Welcome back, ${profile?.displayName?.split(' ')[0] ?? 'family'}`}
-        body="This dashboard is your main page for reunion planning, updates, logistics, and shared family activity."
-      />
+  const upcomingEvents = [...events]
+    .sort((a, b) => Date.parse(String(a.startAt)) - Date.parse(String(b.startAt)))
+    .slice(0, 2);
+  const latestActivity = posts.slice(0, 3);
+  const planningMembers = [...new Set(posts.slice(0, 4).map((post) => post.authorName))];
+  const primaryEvent = upcomingEvents[0] ?? events[0] ?? null;
+  const bannerTitle = primaryEvent?.title?.trim() || 'Family Reunion Weekend';
+  const bannerVenue = primaryEvent?.venue?.trim() || 'Location TBD';
+  const startDate = toDate(primaryEvent?.startAt);
+  const endDate = toDate(primaryEvent?.endAt);
+  const bannerStatus = (() => {
+    if (!startDate) return 'Coming soon';
+    const startTs = startDate.getTime();
+    const endTs = endDate ? endDate.getTime() : startTs + 24 * 60 * 60 * 1000;
+    if (nowTs < startTs) return 'Coming soon';
+    if (nowTs <= endTs) return 'Happening now';
+    return 'Completed';
+  })();
+  const bannerDate = startDate
+    ? endDate
+      ? `${formatDate(startDate)} to ${formatDate(endDate)}`
+      : formatDate(startDate)
+    : 'Date TBD';
+  const attendingCount = registrations.filter((registration) => registration.rsvpStatus === 'attending').length;
+  const bannerRsvp = attendingCount > 0 ? `${attendingCount} RSVPs confirmed.` : 'RSVPs pending.';
 
-      <div className="stats-grid">
+  return (
+    <section className="page-section hk-dashboard-page">
+      <header className="hk-dashboard-intro">
+        <div>
+          <h1>Heritage Hearth</h1>
+          <p>Welcome back to the family hub.</p>
+        </div>
+        <div className="hk-dashboard-search" aria-hidden="true">
+          <span>Search memories...</span>
+        </div>
+      </header>
+
+      <article className="hk-dashboard-hero">
+        <span className="pill">{bannerStatus}</span>
+        <h2>{bannerTitle}</h2>
+        <p>{`${bannerVenue}. ${bannerDate}. ${bannerRsvp}`}</p>
+      </article>
+
+      <div className="hk-dashboard-main-grid">
+        <div>
+          <div className="hk-section-headline">
+            <h3>Upcoming Details</h3>
+            <Link to="/app/events">View All</Link>
+          </div>
+
+          <div className="hk-upcoming-grid">
+            <article className="hk-upcoming-card">
+              <p className="hk-card-tag">Booked</p>
+              <h4>{hotels[0]?.name ?? 'Grand Tahoe Lodge'}</h4>
+              <p>{hotels[0]?.deadline ? `Deadline ${formatDate(hotels[0].deadline)}` : 'Check-in Friday, July 12'}</p>
+              <Link to="/app/hotels">Get directions</Link>
+            </article>
+            <article className="hk-upcoming-card">
+              <p className="hk-card-tag">Day 1</p>
+              <h4>{upcomingEvents[0]?.title ?? 'Welcome BBQ'}</h4>
+              <p>{upcomingEvents[0] ? formatDateTime(upcomingEvents[0].startAt) : '6:00 PM at the pavilion'}</p>
+              <Link to="/app/events">See potluck list</Link>
+            </article>
+          </div>
+
+          <div className="hk-section-headline">
+            <h3>Latest Activity</h3>
+          </div>
+          <div className="hk-activity-list">
+            {latestActivity.length ? latestActivity.map((post) => (
+              <article key={post.id} className="hk-activity-item">
+                <div>
+                  <strong>{post.authorName} shared a new post</strong>
+                  <p>{stripMentionTokens(post.body ?? '').slice(0, 85) || 'Family bulletin update'}</p>
+                </div>
+                <span>{relativeTime(post.createdAt)}</span>
+              </article>
+            )) : (
+              <article className="hk-activity-item">
+                <div>
+                  <strong>No recent updates yet</strong>
+                  <p>Posts and uploads will appear here as your family starts sharing.</p>
+                </div>
+              </article>
+            )}
+          </div>
+        </div>
+
+        <aside className="hk-dashboard-side">
+          <article className="hk-checklist-card">
+            <h3>Preparation Guide</h3>
+            <ul>
+              <li>Update profile info</li>
+              <li>Confirm RSVP</li>
+              <li>Book lodging</li>
+              <li>Sign up for potluck</li>
+            </ul>
+          </article>
+
+          <article className="hk-committee-card">
+            <h3>Planning Committee</h3>
+            <div className="hk-avatars-row">
+              {planningMembers.length ? planningMembers.map((name) => (
+                <span key={name} className="hk-avatar-chip" title={name}>{name.slice(0, 1).toUpperCase()}</span>
+              )) : (
+                <span className="helper-text">No committee activity yet</span>
+              )}
+            </div>
+          </article>
+        </aside>
+      </div>
+      <div className="stats-grid hk-dashboard-stats">
         <StatCard title="Upcoming events" value={String(events.length)} detail="Schedule items available to approved members." />
         <StatCard title="Hotel blocks" value={String(hotels.length)} detail="Informational stays with deadline and booking links." />
         <StatCard title="Bulletin posts" value={String(posts.length)} detail="Announcements and discussions shared with the family." />
         <StatCard title="Shared files" value={String(assets.length)} detail="Images and PDFs stored in Firebase Storage." />
       </div>
 
-      <Card accent="warm">
-        <SectionHeader
-          title="Latest bulletin post"
-          meta={latestPost ? `by ${latestPost.authorName}` : 'No posts yet'}
-        />
-        {latestPost ? (
-          <div className="list-stack">
-            <p className="helper-text" style={{ marginTop: 0 }}>
-              {latestPostSnippet}
-            </p>
-            <div className="stack-row">
-              <Link to="/app/bulletin" className="ghost-link">
-                View bulletin
-              </Link>
-            </div>
-          </div>
-        ) : (
-          <p className="helper-text">Check back soon for family updates.</p>
-        )}
-      </Card>
-
-      <Card accent="warm">
-        <SectionHeader title="How to use the portal" meta="Start here" />
-        <ul className="checklist">
-          <li>Open Profile first to confirm the Google details we pulled in and add your short family bio.</li>
-          <li>Open Registration first and complete your attendee details, RSVP, and travel notes.</li>
-          <li>Check Events for the reunion timeline and Hotels for room block deadlines and booking links.</li>
-          <li>Use Bulletin for shared family updates and Messages for direct coordination.</li>
-          <li>Upload photos or PDFs in Files so everyone has one trusted place for reunion materials.</li>
-        </ul>
-      </Card>
-
-      <div className="content-grid two-up">
-        <Card>
-          <SectionHeader title="Next on the schedule" meta="Live from Firestore or demo seed" />
-          <div className="list-stack">
-            {events.slice(0, 3).map((event) => (
-              <article className="list-item" key={event.id}>
-                <div>
-                  <strong>{event.title}</strong>
-                  <p>{event.venue}</p>
-                </div>
-                <span>{formatDateTime(event.startAt)}</span>
-              </article>
-            ))}
-          </div>
-        </Card>
-
-        <Card accent="warm">
-          <SectionHeader title="Member checklist" meta="For a smoother reunion weekend" />
-          <ul className="checklist">
-            <li>Review your profile photo, name, phone, city, and short bio.</li>
-            <li>Finish your registration profile and travel notes.</li>
-            <li>Review hotel deadlines before the room block closes.</li>
-            <li>Upload old photos or key PDFs to the shared files area.</li>
-            <li>Use the bulletin for broad updates and direct messages for side coordination.</li>
-          </ul>
-        </Card>
-      </div>
+      {latestPost ? (
+        <article className="hk-dashboard-footer-note">
+          <strong>Latest bulletin by {latestPost.authorName}:</strong> {latestPostSnippet}
+        </article>
+      ) : null}
     </section>
   );
 };
@@ -583,11 +333,9 @@ const ProfilePage = () => {
   const uid = profile?.uid ?? '';
   const initialPhoto = profile?.photoURL || user?.photoURL || null;
   const [profilePhoto, setProfilePhoto] = useState<string | null>(initialPhoto);
-  const [photoRefreshAttempted, setPhotoRefreshAttempted] = useState(false);
 
   useEffect(() => {
     setProfilePhoto(initialPhoto);
-    setPhotoRefreshAttempted(false);
   }, [initialPhoto, uid]);
 
   const tryPushDirectory = useCallback(async () => {
@@ -603,47 +351,13 @@ const ProfilePage = () => {
     }
   }, [isDemoMode, user]);
 
-  const refreshProfilePhoto = useCallback(async () => {
-    if (!uid || photoRefreshAttempted) {
-      return;
-    }
-    setPhotoRefreshAttempted(true);
-    const refreshed = await getProfileImageDownloadUrl(uid);
-    if (refreshed) {
-      setProfilePhoto(refreshed);
-      if (!isDemoMode && refreshed !== profile?.photoURL) {
-        try {
-          await updateProfilePhotoUrl(uid, refreshed);
-          await tryPushDirectory();
-        } catch {
-          /* ignore */
-        }
-      }
-      return;
-    }
-    if (user?.photoURL) {
-      setProfilePhoto(user.photoURL);
-    } else {
-      setProfilePhoto(null);
-    }
-  }, [uid, photoRefreshAttempted, user?.photoURL, isDemoMode, profile?.photoURL, tryPushDirectory]);
-
-  useEffect(() => {
-    if (!uid || isDemoMode) return;
-    void refreshProfilePhoto();
-  }, [uid, isDemoMode, refreshProfilePhoto]);
-
   const handleProfilePhotoError = useCallback(() => {
-    if (!photoRefreshAttempted) {
-      void refreshProfilePhoto();
-      return;
-    }
     if (user?.photoURL && profilePhoto !== user.photoURL) {
       setProfilePhoto(user.photoURL);
       return;
     }
     setProfilePhoto(null);
-  }, [photoRefreshAttempted, refreshProfilePhoto, user?.photoURL, profilePhoto]);
+  }, [user?.photoURL, profilePhoto]);
 
   if (!profile || !user) {
     return null;
@@ -694,7 +408,7 @@ const ProfilePage = () => {
   const emailVerified = typeof user.emailVerified === 'boolean' ? user.emailVerified : true;
 
   return (
-    <section className="page-section">
+    <section className="page-section hk-unified-page hk-profile-page">
       <SectionIntro
         eyebrow="Profile"
         title={`${firstName}'s member profile`}
@@ -874,7 +588,7 @@ const RegistrationPage = () => {
   };
 
   return (
-    <section className="page-section">
+    <section className="page-section hk-unified-page hk-registration-page">
       <SectionIntro
         eyebrow="Registration"
         title="Per-person attendee details"
@@ -995,11 +709,16 @@ const EventsPage = () => {
   };
 
   return (
-    <section className="page-section">
-      <SectionIntro eyebrow="Events" title="Reunion schedule" body="Publish the timeline, venues, and meeting notes that everyone needs before the weekend starts." />
-      <div className="content-grid two-up">
-        <Card>
-          <SectionHeader title="Published events" meta={`${events.length} items`} />
+    <section className="page-section hk-events-page">
+      <article className="hk-events-hero">
+        <p className="eyebrow">Our Itinerary</p>
+        <h1>Weekend Events</h1>
+        <p>Gathering points, meals, and celebrations are listed below so everyone can stay coordinated.</p>
+      </article>
+
+      <div className="hk-events-layout">
+        <Card className="hk-events-stream">
+          <SectionHeader title="Published itinerary" meta={`${events.length} items`} />
           <div className="list-stack">
             {events.map((eventItem) => (
               <EventAssetCard
@@ -1013,8 +732,8 @@ const EventsPage = () => {
           </div>
         </Card>
 
-        <Card accent="warm">
-          <SectionHeader title="Add event" meta={canManage ? 'Organizer or admin' : 'Read-only'} />
+        <Card accent="warm" className="hk-events-editor">
+          <SectionHeader title="Schedule editor" meta={canManage ? 'Organizer or admin' : 'Read-only'} />
           {canManage ? (
             <form className="form-grid" onSubmit={onSubmit}>
               <label>
@@ -1097,11 +816,16 @@ const HotelsPage = () => {
   };
 
   return (
-    <section className="page-section">
-      <SectionIntro eyebrow="Hotels" title="Room blocks and stay details" body="V1 keeps hotel data informational only: booking links, deadlines, addresses, and contact notes." />
-      <div className="content-grid two-up">
-        <Card>
-          <SectionHeader title="Recommended stays" meta="Outbound booking links" />
+    <section className="page-section hk-hotels-page">
+      <article className="hk-hotels-hero">
+        <p className="eyebrow">Where to Stay</p>
+        <h1>The Riverside Inn and Suites</h1>
+        <p>Use the family room block where available and keep all booking details centralized for arrivals.</p>
+      </article>
+
+      <div className="hk-hotels-layout">
+        <Card className="hk-hotels-list">
+          <SectionHeader title="Family hotel options" meta="Outbound booking links" />
           <div className="list-stack">
             {hotels.map((hotel) => (
               <HotelAssetCard
@@ -1115,8 +839,8 @@ const HotelsPage = () => {
           </div>
         </Card>
 
-        <Card accent="cool">
-          <SectionHeader title="Add hotel details" meta={canManage ? 'Organizer or admin' : 'Read-only'} />
+        <Card accent="cool" className="hk-hotels-editor">
+          <SectionHeader title="Lodging manager" meta={canManage ? 'Organizer or admin' : 'Read-only'} />
           {canManage ? (
             <form className="form-grid" onSubmit={onSubmit}>
               <label>
@@ -1237,7 +961,7 @@ const FlightsPage = () => {
   };
 
   return (
-    <section className="page-section">
+    <section className="page-section hk-unified-page hk-flights-page">
       <SectionIntro
         eyebrow="Flights"
         title="Family travel plans"
@@ -1678,7 +1402,7 @@ const BulletinPage = () => {
 
   return (
     <>
-      <section className="page-section">
+      <section className="page-section hk-unified-page hk-bulletin-page">
       <SectionIntro eyebrow="Bulletin" title="Announcements and family discussion" body="Use the shared board for reminders, updates, and collaborative planning instead of fragmented chats." />
       <div className="content-grid two-up">
         <Card accent="warm">
@@ -2201,7 +1925,7 @@ const MessagesPage = () => {
     selectedThread?.participantNames.filter((n) => n !== profile.displayName).join(', ') || 'Conversation';
 
   return (
-    <section className="page-section messages-page">
+    <section className="page-section messages-page hk-unified-page hk-messages-page">
       <SectionIntro eyebrow="Messages" title="Direct coordination threads" body="Use direct messages for side conversations that should not live on the public bulletin board." />
       <div className={`messages-layout ${selectedThreadId ? 'conversation-open' : ''}`}>
         <Card className="messages-panel-start">
@@ -2318,45 +2042,59 @@ const FilesPage = () => {
     }
   };
 
+  const imageAssets = assets.filter((asset) => asset.kind === 'image');
+  const documentAssets = assets.filter((asset) => asset.kind === 'document');
+
   return (
-    <section className="page-section">
-      <SectionIntro eyebrow="Files" title="Images and PDF uploads" body="Uploads are scoped to approved members and limited to image and PDF content types." />
-      <div className="content-grid two-up">
-        <Card accent="warm">
-          <SectionHeader title="Upload asset" meta="Storage-backed" />
-          <label className="upload-card">
-            <span>Select an image or PDF</span>
+    <section className="page-section hk-gallery-page">
+      <header className="hk-gallery-intro">
+        <h1>Family Gallery</h1>
+        <p>A digital heirloom of our shared journey. Explore the faces and places that define the family legacy.</p>
+      </header>
+
+      <Card className="hk-gallery-grid-card">
+        <SectionHeader title="Recent highlights" meta={`${imageAssets.length} photos`} />
+        <div className="hk-gallery-grid">
+          {imageAssets.slice(0, 6).map((asset) => (
+            <a key={asset.id} className="hk-gallery-tile" href={asset.downloadUrl} target="_blank" rel="noreferrer">
+              <img src={asset.downloadUrl} alt={asset.fileName} loading="lazy" />
+              <span>{asset.fileName}</span>
+            </a>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="hk-files-row-card" accent="warm">
+        <SectionHeader title="Shared files and documents" meta={`${documentAssets.length} documents`} />
+        <div className="hk-files-toolbar">
+          <label className="upload-card hk-upload-inline">
+            <span>Upload document or photo</span>
             <input accept="image/*,application/pdf" onChange={(event) => void onFileChange(event)} type="file" />
           </label>
-        </Card>
-
-        <Card>
-          <SectionHeader title="Shared assets" meta={`${assets.length} files`} />
-          <div className="list-stack">
-            {assets.map((asset) => (
-              <article className="list-item" key={asset.id}>
-                <div>
-                  <strong>{asset.fileName}</strong>
-                  <p>
-                    {asset.ownerName} · {asset.kind}
-                  </p>
-                </div>
-                <div className="timeline-meta stack-row">
-                  <span>{formatFileSize(asset.size)}</span>
-                  <a className="ghost-link" href={asset.downloadUrl} target="_blank" rel="noreferrer">
-                    Open
-                  </a>
-                  {(profile?.role === 'admin' || profile?.role === 'organizer') && (
-                    <button type="button" className="ghost-button danger-button" onClick={() => void onDeleteAsset(asset)}>
-                      Delete
-                    </button>
-                  )}
-                </div>
-              </article>
-            ))}
-          </div>
-        </Card>
-      </div>
+        </div>
+        <div className="list-stack">
+          {documentAssets.map((asset) => (
+            <article className="list-item hk-file-row" key={asset.id}>
+              <div>
+                <strong>{asset.fileName}</strong>
+                <p>
+                  {asset.ownerName} · {formatFileSize(asset.size)}
+                </p>
+              </div>
+              <div className="timeline-meta stack-row">
+                <a className="ghost-link" href={asset.downloadUrl} target="_blank" rel="noreferrer">
+                  Open
+                </a>
+                {(profile?.role === 'admin' || profile?.role === 'organizer') && (
+                  <button type="button" className="ghost-button danger-button" onClick={() => void onDeleteAsset(asset)}>
+                    Delete
+                  </button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      </Card>
     </section>
   );
 };
@@ -2517,7 +2255,6 @@ type FamilyTreeNodeData = {
 
 function FamilyTreeNode({ data }: NodeProps<FlowNode<FamilyTreeNodeData>>) {
   const [imgFailed, setImgFailed] = useState(false);
-  const [refreshAttempted, setRefreshAttempted] = useState(false);
   const [resolvedPhotoUrl, setResolvedPhotoUrl] = useState<string | null>(data?.photoURL ?? null);
   const photoUrl = data?.photoURL ?? null;
   const name = data?.label ?? '';
@@ -2526,26 +2263,14 @@ function FamilyTreeNode({ data }: NodeProps<FlowNode<FamilyTreeNodeData>>) {
   const showPhoto = Boolean(resolvedPhotoUrl && typeof resolvedPhotoUrl === 'string' && resolvedPhotoUrl.trim() && !imgFailed);
 
   useEffect(() => {
-    setResolvedPhotoUrl(photoUrl);
-    setImgFailed(false);
-    setRefreshAttempted(false);
+    queueMicrotask(() => {
+      setResolvedPhotoUrl(photoUrl);
+      setImgFailed(false);
+    });
   }, [photoUrl, data?.uid]);
 
   const handlePhotoError = () => {
-    if (!data?.uid || refreshAttempted) {
-      setImgFailed(true);
-      return;
-    }
-
-    setRefreshAttempted(true);
     setImgFailed(true);
-    void (async () => {
-      const refreshed = await getProfileImageDownloadUrl(data.uid);
-      if (refreshed) {
-        setResolvedPhotoUrl(refreshed);
-        setImgFailed(false);
-      }
-    })();
   };
   return (
     <div className={`family-tree-flow-node ${isCenter ? 'family-tree-flow-node-center' : ''}`}>
@@ -2881,7 +2606,7 @@ function FamilyTreePage() {
   if (!profile) return null;
 
   return (
-    <section className="page-section">
+    <section className="page-section hk-unified-page hk-familytree-page">
       <SectionIntro
         eyebrow="Family tree"
         title="Relationships and connections"
@@ -3098,7 +2823,7 @@ const HelpPage = () => {
   };
 
   return (
-    <section className="page-section">
+    <section className="page-section hk-unified-page hk-help-page">
       <SectionIntro
         eyebrow="Help"
         title="How to use the portal"
@@ -3618,7 +3343,7 @@ const AuditPage = () => {
   const { data: logs } = useAuditLogs();
 
   return (
-    <section className="page-section">
+    <section className="page-section hk-unified-page hk-audit-page">
       <SectionIntro
         eyebrow="Audit log"
         title="Activity history"
@@ -3776,7 +3501,7 @@ const InviteLinkCard = () => {
 
 const OrganizerPage = () => {
   return (
-    <section className="page-section">
+    <section className="page-section hk-unified-page hk-organizer-page">
       <SectionIntro
         eyebrow="Organizer"
         title="Organizer hub"
@@ -3835,7 +3560,7 @@ const AdminPage = () => {
   };
 
   return (
-    <section className="page-section">
+    <section className="page-section hk-unified-page hk-admin-page">
       <SectionIntro eyebrow="Admin" title="Approvals, roles, and invites" body="Privileged actions route through the single HTTPS function so admin credentials never reach the client." />
       <div className="content-grid two-up">
         <PendingApprovalsCard />
@@ -3868,34 +3593,3 @@ const AdminPage = () => {
   );
 };
 
-const Card = ({
-  children,
-  accent,
-  className = '',
-}: {
-  children: ReactNode;
-  accent?: 'warm' | 'cool';
-  className?: string;
-}) => <section className={`panel-card ${accent ? `accent-${accent}` : ''} ${className}`.trim()}>{children}</section>;
-
-const SectionHeader = ({ title, meta }: { title: string; meta?: string }) => (
-  <header className="section-header">
-    <h2>{title}</h2>
-    {meta ? <span>{meta}</span> : null}
-  </header>
-);
-
-const SectionIntro = ({ title, body }: { eyebrow: string; title: string; body: string }) => (
-  <header className="section-intro">
-    <h1>{title}</h1>
-    <p>{body}</p>
-  </header>
-);
-
-const StatCard = ({ title, value, detail }: { title: string; value: string; detail: string }) => (
-  <article className="stat-card">
-    <span>{title}</span>
-    <strong>{value}</strong>
-    <p>{detail}</p>
-  </article>
-);

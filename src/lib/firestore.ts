@@ -296,6 +296,19 @@ export const useUserRegistration = (uid: string, fallbackEmail: string, fallback
   );
 };
 
+export const useRegistrations = () =>
+  useDemoOrLive<Registration[]>(
+    [],
+    useMemo(
+      () =>
+        db
+          ? (setData: (value: Registration[]) => void) =>
+              subscribeCollection<Registration>('registrations', [], setData)
+          : undefined,
+      [],
+    ),
+  );
+
 export const useThreads = (uid: string) => {
   const fallback = useMemo(() => demoThreads.filter((thread) => thread.participantIds.includes(uid)), [uid]);
   const result = useDemoOrLive<Thread[]>(
@@ -562,7 +575,6 @@ export const logAuditEvent = async (
       createdAt: serverTimestamp(),
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.warn('[logAuditEvent] write failed (non-fatal):', err);
   }
 };
@@ -620,10 +632,7 @@ export const createOrGetDirectThread = async (
       query(collection(db!, 'threads'), where('participantKey', '==', participantKey)),
     );
   } catch (err) {
-    // #region agent log (minimal console so the user sees a stack in devtools)
-    // eslint-disable-next-line no-console
     console.error('[createOrGetDirectThread] existing thread lookup failed:', err);
-    // #endregion
   }
   if (existingSnapshot && !existingSnapshot.empty) {
     return existingSnapshot.docs[0].id;
