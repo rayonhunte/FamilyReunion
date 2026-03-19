@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useNotification } from '../contexts/useNotification';
 import { useAuth } from '../hooks/useAuth';
 import { usePendingApprovals, useBulletinPosts, useBulletinComments } from '../lib/firestore';
@@ -45,38 +45,40 @@ export function NotificationHub() {
 
   const buildId = env.buildId;
 
-  const safeReadJsonArray = (raw: string | null): string[] => {
-    if (!raw) return [];
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? (parsed.filter((x) => typeof x === 'string') as string[]) : [];
-    } catch {
-      return [];
-    }
-  };
-
   const bulletinPostSeenKey = myUid ? `familyreunion:seen_bulletin_posts:${myUid}` : null;
   const bulletinCommentSeenKey = myUid ? `familyreunion:seen_bulletin_comments:${myUid}` : null;
 
-  const loadSeenPosts = (): Set<string> => {
+  const loadSeenPosts = useCallback((): Set<string> => {
     if (!bulletinPostSeenKey) return new Set();
-    return new Set(safeReadJsonArray(localStorage.getItem(bulletinPostSeenKey)));
-  };
+    try {
+      const parsed = JSON.parse(localStorage.getItem(bulletinPostSeenKey) ?? '[]');
+      const ids = Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+      return new Set(ids as string[]);
+    } catch {
+      return new Set();
+    }
+  }, [bulletinPostSeenKey]);
 
-  const loadSeenComments = (): Set<string> => {
+  const loadSeenComments = useCallback((): Set<string> => {
     if (!bulletinCommentSeenKey) return new Set();
-    return new Set(safeReadJsonArray(localStorage.getItem(bulletinCommentSeenKey)));
-  };
+    try {
+      const parsed = JSON.parse(localStorage.getItem(bulletinCommentSeenKey) ?? '[]');
+      const ids = Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+      return new Set(ids as string[]);
+    } catch {
+      return new Set();
+    }
+  }, [bulletinCommentSeenKey]);
 
-  const persistSeenPosts = (ids: Set<string>) => {
+  const persistSeenPosts = useCallback((ids: Set<string>) => {
     if (!bulletinPostSeenKey) return;
     localStorage.setItem(bulletinPostSeenKey, JSON.stringify(Array.from(ids)));
-  };
+  }, [bulletinPostSeenKey]);
 
-  const persistSeenComments = (ids: Set<string>) => {
+  const persistSeenComments = useCallback((ids: Set<string>) => {
     if (!bulletinCommentSeenKey) return;
     localStorage.setItem(bulletinCommentSeenKey, JSON.stringify(Array.from(ids)));
-  };
+  }, [bulletinCommentSeenKey]);
 
   // Build/version notification (in-app + phone if permitted).
   useEffect(() => {
@@ -159,7 +161,7 @@ export function NotificationHub() {
     if (didNotify) {
       persistSeenPosts(seenPostIdsRef.current);
     }
-  }, [isDemoMode, myUid, notify, posts, profile]);
+  }, [isDemoMode, loadSeenPosts, myUid, notify, persistSeenPosts, posts, profile]);
 
   // Bulletin replies/comments (@reply): only the mentioned user gets notified.
   useEffect(() => {
@@ -196,7 +198,7 @@ export function NotificationHub() {
     if (didNotify) {
       persistSeenComments(seenCommentIdsRef.current);
     }
-  }, [comments, isDemoMode, myUid, notify, profile]);
+  }, [comments, isDemoMode, loadSeenComments, myUid, notify, persistSeenComments, profile]);
 
   // This component is intentionally headless.
   return null;
