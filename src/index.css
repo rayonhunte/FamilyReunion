@@ -1577,6 +1577,15 @@ p {
   padding: 1.1rem;
 }
 
+.hk-landing-hero-only {
+  margin-top: 1rem;
+  background: rgba(255, 252, 247, 0.78);
+  border: 1px solid var(--border);
+  border-radius: 26px;
+  padding: 1rem;
+  box-shadow: var(--shadow);
+}
+
 .hk-landing-topbar {
   position: sticky;
   top: 0.9rem;
