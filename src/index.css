@@ -1291,76 +1291,91 @@ p {
 }
 
 .family-tree-graph {
-  background: var(--paper-strong);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 1rem;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 0.75rem;
   overflow: hidden;
   min-height: 400px;
 }
 
-/* React Flow family tree overrides */
+/* React Flow family tree — pedigree-style: light canvas, gray step edges */
 .family-tree-react-flow {
-  --rf-background: var(--paper-strong);
+  --rf-background: #f5f5f5;
 }
 .family-tree-react-flow .react-flow__node {
-  font-family: var(--font-fraunces, 'Fraunces', Georgia, serif);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
-.family-tree-react-flow .react-flow__edge-path {
-  stroke: var(--muted);
-  stroke-width: 2;
+.family-tree-react-flow .react-flow__edge-path,
+.family-tree-flow-edge-path {
+  stroke: #c8c8c8;
+  stroke-width: 1.5;
 }
 .family-tree-react-flow .react-flow__controls {
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e8e8e8;
 }
 .family-tree-react-flow .react-flow__minimap {
   border-radius: 8px;
   overflow: hidden;
+  border: 1px solid #e0e0e0;
 }
 
 .family-tree-edge-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ink);
-  background: var(--paper);
-  padding: 2px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 500;
+  font-style: italic;
+  color: #666;
+  background: rgba(245, 245, 245, 0.92);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: none;
   white-space: nowrap;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  box-shadow: none;
 }
 
-/* Custom family member node: avatar + name */
+/* Nodes: circle + name only (no card chrome) */
 .family-tree-flow-node {
   padding: 0;
-  border-radius: 12px;
-  border: 2px solid var(--border);
-  background: var(--paper);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-.family-tree-flow-node-center {
-  border-color: var(--accent-strong);
-  background: var(--mint);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 .family-tree-flow-node-body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.5rem 0.75rem 0.5rem;
-  min-width: 80px;
+  gap: 0.45rem;
+  padding: 0.25rem 0.35rem;
+  min-width: 72px;
 }
 .family-tree-flow-node-avatar {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   overflow: hidden;
-  background: var(--paper-strong);
+  background: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  box-sizing: border-box;
+}
+.family-tree-flow-node-avatar-photo {
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px #d0d0d0;
+}
+.family-tree-flow-node-avatar-placeholder {
+  border: 2px dashed #b8b8b8;
+  background: #fafafa;
+}
+.family-tree-flow-node-center .family-tree-flow-node-avatar-photo {
+  box-shadow: 0 0 0 2px #6b9bd1;
+}
+.family-tree-flow-node-center .family-tree-flow-node-avatar-placeholder {
+  border-color: #6b9bd1;
+  border-style: dashed;
+  background: #f0f6fc;
 }
 .family-tree-flow-node-avatar img {
   width: 100%;
@@ -1368,32 +1383,34 @@ p {
   object-fit: cover;
 }
 .family-tree-flow-node-initials {
-  font-family: var(--font-fraunces, 'Fraunces', Georgia, serif);
-  font-size: 14px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 15px;
   font-weight: 600;
-  color: var(--ink);
+  color: #555;
 }
 .family-tree-flow-node-name {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
-  color: var(--ink);
+  color: #222;
   text-align: center;
-  line-height: 1.2;
-  max-width: 100px;
+  line-height: 1.25;
+  max-width: 96px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .family-tree-flow-node-center .family-tree-flow-node-avatar {
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
 }
 .family-tree-flow-node-center .family-tree-flow-node-initials {
-  font-size: 16px;
+  font-size: 17px;
+  color: #3d5a80;
 }
 .family-tree-flow-node-center .family-tree-flow-node-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
+  color: #1a1a1a;
 }
 
 .family-tree-vine {

@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { ReactFlow, ReactFlowProvider, Controls, MiniMap, Handle, BaseEdge, EdgeLabelRenderer, getBezierPath, applyNodeChanges, applyEdgeChanges, Position, type Node as FlowNode, type Edge as FlowEdge, type NodeProps, type EdgeProps } from '@xyflow/react';
+import { ReactFlow, ReactFlowProvider, Controls, MiniMap, Handle, BaseEdge, EdgeLabelRenderer, getSmoothStepPath, applyNodeChanges, applyEdgeChanges, Position, type Node as FlowNode, type Edge as FlowEdge, type NodeProps, type EdgeProps } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useNotification } from '../contexts/useNotification';
 import { useAuth } from '../hooks/useAuth';
@@ -2116,7 +2116,9 @@ function FamilyTreeNode({ data }: NodeProps<FlowNode<FamilyTreeNodeData>>) {
     <div className={`family-tree-flow-node ${isCenter ? 'family-tree-flow-node-center' : ''}`}>
       <Handle type="target" position={Position.Top} />
       <div className="family-tree-flow-node-body">
-        <div className="family-tree-flow-node-avatar">
+        <div
+          className={`family-tree-flow-node-avatar ${showPhoto ? 'family-tree-flow-node-avatar-photo' : 'family-tree-flow-node-avatar-placeholder'}`}
+        >
           {showPhoto ? (
             <img
               src={photoUrl!}
@@ -2137,17 +2139,29 @@ function FamilyTreeNode({ data }: NodeProps<FlowNode<FamilyTreeNodeData>>) {
 
 const familyTreeNodeTypes = { familyMember: FamilyTreeNode };
 
-function FamilyTreeEdge({ id, sourceX, sourceY, targetX, targetY, data }: EdgeProps<FlowEdge>) {
-  const [edgePath, labelX, labelY] = getBezierPath({
+function FamilyTreeEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  data,
+}: EdgeProps<FlowEdge>) {
+  const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,
+    sourcePosition: sourcePosition ?? Position.Bottom,
     targetX,
     targetY,
+    targetPosition: targetPosition ?? Position.Top,
+    borderRadius: 0,
   });
   const label = (data?.label as string) ?? '';
   return (
     <>
-      <BaseEdge id={id} path={edgePath} />
+      <BaseEdge id={id} path={edgePath} className="family-tree-flow-edge-path" />
       <EdgeLabelRenderer>
         <div
           style={{
