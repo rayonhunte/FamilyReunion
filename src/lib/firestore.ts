@@ -99,6 +99,27 @@ const subscribeCollection = <T extends { id: string }>(
   return onSnapshot(target, (snapshot) => setData(mapDocs<T>(snapshot)));
 };
 
+const profileAvatarFileName = (uid: string) => `avatar-${uid}`;
+const profileImagePath = (uid: string) => `profile-images/${uid}/${profileAvatarFileName(uid)}`;
+const legacyProfileImagePath = (uid: string) => `images/${uid}/${profileAvatarFileName(uid)}`;
+
+export const getProfileImageDownloadUrl = async (uid: string) => {
+  if (!storage || !uid) {
+    return null;
+  }
+
+  const paths = [profileImagePath(uid), legacyProfileImagePath(uid)];
+  for (const path of paths) {
+    try {
+      return await getDownloadURL(ref(storage, path));
+    } catch {
+      /* try next path */
+    }
+  }
+
+  return null;
+};
+
 export const useEvents = () =>
   useDemoOrLive<EventItem[]>(
     demoEvents,
@@ -807,8 +828,7 @@ export const uploadProfileImage = async (uid: string, file: File) => {
     throw new Error('Photo upload needs Firebase Storage configured.');
   }
 
-  const safeFileName = `avatar-${uid}`;
-  const storagePath = `profile-images/${uid}/${safeFileName}`;
+  const storagePath = profileImagePath(uid);
   const storageRef = ref(storage, storagePath);
   const contentType =
     file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';

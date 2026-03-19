@@ -26,6 +26,7 @@ import {
   deleteHotel,
   deleteRelationship,
   deleteStorageFile,
+  getProfileImageDownloadUrl,
   logAuditEvent,
   saveRegistration,
   sendThreadMessage,
@@ -578,6 +579,44 @@ const ProfilePage = () => {
     city: profile?.city ?? '',
     bio: profile?.bio ?? '',
   });
+  const uid = profile?.uid ?? '';
+  const initialPhoto = profile?.photoURL || user?.photoURL || null;
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(initialPhoto);
+  const [photoRefreshAttempted, setPhotoRefreshAttempted] = useState(false);
+
+  useEffect(() => {
+    setProfilePhoto(initialPhoto);
+    setPhotoRefreshAttempted(false);
+  }, [initialPhoto, uid]);
+
+  const refreshProfilePhoto = useCallback(async () => {
+    if (!uid || photoRefreshAttempted) {
+      return;
+    }
+    setPhotoRefreshAttempted(true);
+    const refreshed = await getProfileImageDownloadUrl(uid);
+    if (refreshed) {
+      setProfilePhoto(refreshed);
+      return;
+    }
+    if (user?.photoURL) {
+      setProfilePhoto(user.photoURL);
+    } else {
+      setProfilePhoto(null);
+    }
+  }, [uid, photoRefreshAttempted, user?.photoURL]);
+
+  const handleProfilePhotoError = useCallback(() => {
+    if (!photoRefreshAttempted) {
+      void refreshProfilePhoto();
+      return;
+    }
+    if (user?.photoURL && profilePhoto !== user.photoURL) {
+      setProfilePhoto(user.photoURL);
+      return;
+    }
+    setProfilePhoto(null);
+  }, [photoRefreshAttempted, refreshProfilePhoto, user?.photoURL, profilePhoto]);
 
   if (!profile || !user) {
     return null;
@@ -631,7 +670,6 @@ const ProfilePage = () => {
   };
 
   const firstName = (profile.displayName || user.displayName || 'Family').split(' ')[0];
-  const profilePhoto = profile.photoURL || user.photoURL;
   const createdAt = user.metadata?.creationTime
     ? new Date(user.metadata.creationTime).toLocaleDateString()
     : 'Google account';
@@ -653,7 +691,12 @@ const ProfilePage = () => {
           <SectionHeader title="Google account details" meta="Pulled from sign-in" />
           <div className="profile-summary">
             {profilePhoto ? (
-              <img alt={profile.displayName} className="profile-avatar" src={profilePhoto} />
+              <img
+                alt={profile.displayName}
+                className="profile-avatar"
+                src={profilePhoto}
+                onError={handleProfilePhotoError}
+              />
             ) : (
               <div className="profile-avatar profile-avatar-fallback" aria-hidden="true">
                 {firstName.slice(0, 1).toUpperCase()}
@@ -752,7 +795,12 @@ const ProfilePage = () => {
           <SectionHeader title="Profile image" meta="Visible across the portal" />
           <div className="profile-image-manager">
             {profilePhoto ? (
-              <img alt={profile.displayName} className="profile-avatar profile-avatar-large" src={profilePhoto} />
+              <img
+                alt={profile.displayName}
+                className="profile-avatar profile-avatar-large"
+                src={profilePhoto}
+                onError={handleProfilePhotoError}
+              />
             ) : (
               <div className="profile-avatar profile-avatar-fallback profile-avatar-large" aria-hidden="true">
                 {firstName.slice(0, 1).toUpperCase()}
@@ -2445,6 +2493,7 @@ function getSingleInitial(displayName: string): string {
 }
 
 type FamilyTreeNodeData = {
+  uid: string;
   label: string;
   initials: string;
   photoURL?: string | null;
@@ -2453,11 +2502,36 @@ type FamilyTreeNodeData = {
 
 function FamilyTreeNode({ data }: NodeProps<FlowNode<FamilyTreeNodeData>>) {
   const [imgFailed, setImgFailed] = useState(false);
-  const photoUrl = data?.photoURL;
+  const [refreshAttempted, setRefreshAttempted] = useState(false);
+  const [resolvedPhotoUrl, setResolvedPhotoUrl] = useState<string | null>(data?.photoURL ?? null);
+  const photoUrl = data?.photoURL ?? null;
   const name = data?.label ?? '';
   const initials = data?.initials ?? '?';
   const isCenter = data?.isCenter ?? false;
-  const showPhoto = Boolean(photoUrl && typeof photoUrl === 'string' && photoUrl.trim() && !imgFailed);
+  const showPhoto = Boolean(resolvedPhotoUrl && typeof resolvedPhotoUrl === 'string' && resolvedPhotoUrl.trim() && !imgFailed);
+
+  useEffect(() => {
+    setResolvedPhotoUrl(photoUrl);
+    setImgFailed(false);
+    setRefreshAttempted(false);
+  }, [photoUrl, data?.uid]);
+
+  const handlePhotoError = () => {
+    if (!data?.uid || refreshAttempted) {
+      setImgFailed(true);
+      return;
+    }
+
+    setRefreshAttempted(true);
+    setImgFailed(true);
+    void (async () => {
+      const refreshed = await getProfileImageDownloadUrl(data.uid);
+      if (refreshed) {
+        setResolvedPhotoUrl(refreshed);
+        setImgFailed(false);
+      }
+    })();
+  };
   return (
     <div className={`family-tree-flow-node ${isCenter ? 'family-tree-flow-node-center' : ''}`}>
       <Handle type="target" position={Position.Top} />
@@ -2467,10 +2541,10 @@ function FamilyTreeNode({ data }: NodeProps<FlowNode<FamilyTreeNodeData>>) {
         >
           {showPhoto ? (
             <img
-              src={photoUrl!}
+              src={resolvedPhotoUrl!}
               alt=""
               aria-hidden
-              onError={() => setImgFailed(true)}
+              onError={handlePhotoError}
             />
           ) : (
             <span className="family-tree-flow-node-initials">{initials}</span>
@@ -2765,6 +2839,7 @@ function FamilyTreePage() {
         type: 'familyMember',
         position: nodePositions[member.uid] ?? { x: 0, y: 0 },
         data: {
+          uid: member.uid,
           label: member.displayName,
           initials: getSingleInitial(member.displayName),
           photoURL: member.photoURL ?? null,
