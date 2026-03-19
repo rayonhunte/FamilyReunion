@@ -40,6 +40,7 @@ import {
   uploadAsset,
   uploadBulletinAttachment,
   uploadProfileImage,
+  updateProfilePhotoUrl,
   useAssociatedAssets,
   useAssets,
   useAuditLogs,
@@ -589,6 +590,19 @@ const ProfilePage = () => {
     setPhotoRefreshAttempted(false);
   }, [initialPhoto, uid]);
 
+  const tryPushDirectory = useCallback(async () => {
+    if (isDemoMode) {
+      return;
+    }
+    try {
+      const token = await user?.getIdToken();
+      if (!token) return;
+      await requestSyncMyDirectory(token);
+    } catch {
+      /* e.g. /api not wired locally — profile still saved in Firestore */
+    }
+  }, [isDemoMode, user]);
+
   const refreshProfilePhoto = useCallback(async () => {
     if (!uid || photoRefreshAttempted) {
       return;
@@ -597,6 +611,14 @@ const ProfilePage = () => {
     const refreshed = await getProfileImageDownloadUrl(uid);
     if (refreshed) {
       setProfilePhoto(refreshed);
+      if (!isDemoMode && refreshed !== profile?.photoURL) {
+        try {
+          await updateProfilePhotoUrl(uid, refreshed);
+          await tryPushDirectory();
+        } catch {
+          /* ignore */
+        }
+      }
       return;
     }
     if (user?.photoURL) {
@@ -604,7 +626,12 @@ const ProfilePage = () => {
     } else {
       setProfilePhoto(null);
     }
-  }, [uid, photoRefreshAttempted, user?.photoURL]);
+  }, [uid, photoRefreshAttempted, user?.photoURL, isDemoMode, profile?.photoURL, tryPushDirectory]);
+
+  useEffect(() => {
+    if (!uid || isDemoMode) return;
+    void refreshProfilePhoto();
+  }, [uid, isDemoMode, refreshProfilePhoto]);
 
   const handleProfilePhotoError = useCallback(() => {
     if (!photoRefreshAttempted) {
@@ -621,18 +648,6 @@ const ProfilePage = () => {
   if (!profile || !user) {
     return null;
   }
-
-  const tryPushDirectory = async () => {
-    if (isDemoMode) {
-      return;
-    }
-    try {
-      const token = await user.getIdToken();
-      await requestSyncMyDirectory(token);
-    } catch {
-      /* e.g. /api not wired locally — profile still saved in Firestore */
-    }
-  };
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

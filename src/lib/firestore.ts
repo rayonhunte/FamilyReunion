@@ -873,3 +873,14 @@ export const updateProfileFields = async (
     updatedAt: serverTimestamp(),
   });
 };
+
+export const updateProfilePhotoUrl = async (uid: string, photoURL: string | null) => {
+  if (!db) {
+    return;
+  }
+
+  await updateDoc(doc(db!, 'users', uid), {
+    photoURL,
+    updatedAt: serverTimestamp(),
+  });
+};
