@@ -15,6 +15,7 @@ import {
   type DocumentData,
   type QueryConstraint,
 } from 'firebase/firestore';
+import { updateProfile } from 'firebase/auth';
 import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { startTransition, useEffect, useMemo, useState } from 'react';
 import {
@@ -55,7 +56,7 @@ import type {
   ThreadMessage,
   UserProfile,
 } from '../types/models';
-import { db, storage } from './firebase';
+import { auth, db, storage } from './firebase';
 
 const mapDocs = <T extends { id: string }>(snapshot: { docs: Array<{ id: string; data: () => DocumentData }> }) =>
   snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as T);
@@ -780,6 +781,13 @@ export const uploadProfileImage = async (uid: string, file: File) => {
       photoURL: downloadUrl,
       updatedAt: serverTimestamp(),
     });
+    if (auth?.currentUser?.uid === uid) {
+      try {
+        await updateProfile(auth.currentUser, { photoURL: downloadUrl });
+      } catch {
+        /* Auth profile update is best-effort; Firestore remains source of truth */
+      }
+    }
   } catch (err) {
     // Avoid orphaned file in Storage if Firestore rules reject the write
     try {

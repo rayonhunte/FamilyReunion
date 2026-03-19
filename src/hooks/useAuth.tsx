@@ -132,13 +132,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           );
         } else if (isBootstrapAdmin) {
           if (AUTH_DEBUG) console.log('[Auth] Updating existing user to approved (bootstrap admin)');
+          // Do not merge baseProfile here — it would overwrite Firestore photoURL / displayName
+          // with Google Auth values on every reload and wipe uploaded profile photos.
           await setDoc(
             userRef,
             {
-              ...baseProfile,
               status: 'approved',
               role: 'admin',
               approvedAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
             },
             { merge: true },
           );
