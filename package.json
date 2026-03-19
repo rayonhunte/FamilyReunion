@@ -13,8 +13,8 @@
     "storage:cors": "bash scripts/apply-storage-cors.sh",
     "deploy:rules": "firebase deploy --only firestore",
     "deploy:storage": "firebase deploy --only storage",
-    "deploy:hosting": "npm run build && firebase deploy --only hosting",
-    "deploy": "npm run build && firebase deploy"
+    "deploy:functions": "npm --prefix functions run build && firebase deploy --only functions",
+    "deploy": "npm --prefix functions run build && firebase deploy --only functions,firestore,storage"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.1",

@@ -8,7 +8,7 @@ Private Firebase-powered member portal for planning a family reunion with approv
 - Firebase Auth with Google sign-in
 - Firestore for app data
 - Firebase Storage for images and PDFs
-- Firebase Hosting for the SPA
+- Vercel for the SPA
 - One HTTPS Cloud Function for privileged admin work
 
 ## Security posture
@@ -60,7 +60,7 @@ If the Storage page shows **“Due to recent security improvements…”** and *
 
 4. **Bucket name** — Your console shows `gs://gtfast-7bf85.appspot.com`. Your web app’s `storageBucket` must match that bucket (not a different bucket). If the SDK points at `gtfast-7bf85.firebasestorage.app` but the only bucket is `appspot.com`, align `.env` with the bucket Firebase shows.
 
-### Uploads blocked by CORS (localhost or `*.web.app`)
+### Uploads blocked by CORS (localhost, Vercel, or old `*.web.app`)
 
 CORS is **per bucket**. If `VITE_FIREBASE_STORAGE_BUCKET` is `gtfast-7bf85.firebasestorage.app` but you only ran `gsutil` on `…appspot.com`, **production uploads still fail**.
 
@@ -78,29 +78,29 @@ gsutil cors set storage-cors.json gs://gtfast-7bf85.firebasestorage.app
 gsutil cors set storage-cors.json gs://gtfast-7bf85.appspot.com
 ```
 
-Edit `storage-cors.json` to add origins (e.g. Vercel URL), then run the command again for **the same bucket** your app uses. **`VITE_FIREBASE_STORAGE_BUCKET` must match the bucket name in Firebase Console → Storage** (rebuild after changing secrets).
+Edit `storage-cors.json` to add origins (for example your Vercel production domain and preview domain), then run the command again for **the same bucket** your app uses. **`VITE_FIREBASE_STORAGE_BUCKET` must match the bucket name in Firebase Console → Storage** (rebuild after changing secrets).
 
 ## Deploy prep
 
 - Build the app: `npm run build`
 - Build functions: `npm run build:functions`
-- Deploy with Firebase after authenticating and enabling Hosting, Firestore, Storage, and Functions on project `gtfast-7bf85`
+- Deploy the frontend with Vercel
+- Deploy Firebase backend resources after authenticating and enabling Firestore, Storage, and Functions on project `gtfast-7bf85`
+- In Vercel, set `VITE_FUNCTIONS_URL` to your deployed HTTPS Function URL because the old Firebase Hosting `/api` rewrite is gone
 
 ## Why "Demo mode"?
 
 The app shows **Demo mode** when Firebase config is missing or incomplete. Then it uses fake data so you can still click around. Config comes from env vars (`VITE_FIREBASE_*`).
 
 - **Local:** Add a `.env.local` (copy from `.env.example`) and fill in your real Firebase web app config from [Firebase Console → Project settings → Your apps](https://console.firebase.google.com/project/gtfast-7bf85/settings/general). Restart `npm run dev` after changing env.
-- **Deployed site:** The build must have those env vars at build time. The GitHub Action uses repository secrets (see below); if they are not set, the deployed app has no config and stays in demo mode.
+- **Deployed site:** The Vercel build must have those env vars at build time. If they are not set, the deployed app has no config and stays in demo mode.
 
-## GitHub Actions deployment
+## GitHub Actions backend deployment
 
-Pushes to `main` (and manual runs) deploy Hosting and Functions via [`.github/workflows/deploy-firebase.yml`](.github/workflows/deploy-firebase.yml).
+Pushes to `main` (and manual runs) deploy Firebase backend resources via [`.github/workflows/deploy-firebase.yml`](.github/workflows/deploy-firebase.yml).
 
 1. **FIREBASE_TOKEN** (for deploy): run `firebase login:ci` and add the token as a repo secret.
-2. **Firebase web config** (so the live site is not in demo mode): add these repository secrets with values from Firebase Console → Project settings → Your apps → Web app:
-   - `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_MEASUREMENT_ID`
-   - Optional: `VITE_FUNCTIONS_URL` (default `/api`), `VITE_BOOTSTRAP_ADMIN_EMAIL`
+2. Configure your frontend environment variables in Vercel instead of GitHub Actions.
 
 The workflow uses the project in `.firebaserc` (default: `gtfast-7bf85`).
 

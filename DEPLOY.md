@@ -49,11 +49,10 @@ With the current debug flags you'll see in the browser console:
 
 Use these to see where the flow stops (e.g. profile snapshot error = rules not deployed or wrong project).
 
-## 5. Full deploy (optional)
+## 5. Deploy backend resources
 
 ```bash
-npm run build
 npm run deploy
-# or
-npm run deploy:hosting   # build + hosting only
 ```
+
+For the frontend, deploy with Vercel and make sure `VITE_FUNCTIONS_URL` points at your deployed Firebase HTTPS Function URL because the old Firebase Hosting `/api` rewrite is no longer in use.
