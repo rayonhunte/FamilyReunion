@@ -51,6 +51,7 @@ export const PortalShell = ({
     return Notification.permission;
   });
   const notificationMenuRef = useRef<HTMLDivElement | null>(null);
+  const refreshRequestRef = useRef(0);
   const { items: notificationItems, unreadCount, markAllRead, markNotificationRead } = usePortalNotifications(location.pathname);
 
   const visibleNotifications = notificationItems.slice(0, 8);
@@ -104,7 +105,8 @@ export const PortalShell = ({
   const checkForUpdates = () => {
     // Force refresh with cache-busting query param so updated bundles are fetched.
     const url = new URL(window.location.href);
-    url.searchParams.set('check', String(Date.now()));
+    refreshRequestRef.current += 1;
+    url.searchParams.set('check', String(refreshRequestRef.current));
     window.location.replace(url.toString());
   };
 
@@ -117,13 +119,19 @@ export const PortalShell = ({
 
   const visibleMenu = menuNavItems.filter((item) => !item.adminOnly || isAdmin);
 
-  const openNotification = (href: string, notificationId?: string) => {
-    const item = notificationId ? notificationItems.find((entry) => entry.id === notificationId) : null;
-    if (item) {
-      markNotificationRead(item);
-    }
+  const openNotification = (notificationId: string) => {
+    const item = notificationItems.find((entry) => entry.id === notificationId);
+    if (!item) return;
+
+    markNotificationRead(item);
     setNotificationMenuOpen(false);
-    navigate(href);
+
+    if (item.action === 'refresh-app') {
+      checkForUpdates();
+      return;
+    }
+
+    navigate(item.href);
   };
 
   return (
@@ -210,7 +218,7 @@ export const PortalShell = ({
                         key={item.id}
                         className={`portal-notification-item ${item.unread ? 'is-unread' : ''}`}
                         role="menuitem"
-                        onClick={() => openNotification(item.href, item.id)}
+                        onClick={() => openNotification(item.id)}
                       >
                         <span className={`portal-notification-type type-${item.kind}`}>{item.title}</span>
                         <strong>{item.body}</strong>

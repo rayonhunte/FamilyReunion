@@ -1,33 +1,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNotification } from '../../contexts/useNotification';
 import { useAuth } from '../../hooks/useAuth';
+import { env } from '../../lib/env';
 import { useBulletinComments, useBulletinPosts, usePendingApprovals, useThreads } from '../../lib/firestore';
 import { relativeTime, toDate } from '../../lib/format';
-import { maybeSystemNotify } from '../../lib/systemNotifications';
 import type { BulletinComment, BulletinPost, Thread } from '../../types/models';
 
 type NotificationReadState = {
   posts: string[];
   comments: string[];
   pending: string[];
+  appBuilds: string[];
   threads: Record<string, number>;
 };
 
 export type PortalNotificationItem = {
   id: string;
-  kind: 'direct-message' | 'bulletin-post' | 'bulletin-mention' | 'join-request';
+  kind: 'direct-message' | 'bulletin-post' | 'bulletin-mention' | 'join-request' | 'app-update';
   title: string;
   body: string;
   href: string;
   createdAtLabel: string;
   createdAtMs: number;
   unread: boolean;
+  action?: 'refresh-app';
 };
 
 const EMPTY_NOTIFICATION_READ_STATE: NotificationReadState = {
   posts: [],
   comments: [],
   pending: [],
+  appBuilds: [],
   threads: {},
 };
 
@@ -88,6 +90,7 @@ const loadNotificationReadState = (storageKey: string | null): NotificationReadS
       posts: sanitizeStringArray(parsed.posts),
       comments: sanitizeStringArray(parsed.comments),
       pending: sanitizeStringArray(parsed.pending),
+      appBuilds: sanitizeStringArray(parsed.appBuilds),
       threads: sanitizeThreadReadMap(parsed.threads),
     };
   } catch {
@@ -110,11 +113,11 @@ const getThreadOtherParticipantLabel = (thread: Thread, currentDisplayName: stri
 
 export const usePortalNotifications = (pathname: string) => {
   const { profile, isDemoMode } = useAuth();
-  const { notify } = useNotification();
 
   const myUid = profile?.uid ?? '';
   const myDisplayName = profile?.displayName ?? '';
   const isAdminOrOrganizer = profile?.role === 'admin' || profile?.role === 'organizer';
+  const buildId = env.buildId;
 
   const { data: pendingUsers } = usePendingApprovals();
   const { data: posts } = useBulletinPosts();
@@ -132,16 +135,9 @@ export const usePortalNotifications = (pathname: string) => {
 
   const readState = storedReadState.key === storageKey ? storedReadState.value : EMPTY_NOTIFICATION_READ_STATE;
   const readStateLoaded = storedReadState.key === storageKey;
+  const [availableBuildUpdate, setAvailableBuildUpdate] = useState<{ buildId: string; detectedAt: number } | null>(null);
 
   const baseDocumentTitleRef = useRef('');
-  const seenPendingUidsRef = useRef<Set<string>>(new Set());
-  const pendingInitializedRef = useRef(false);
-  const seenPostIdsRef = useRef<Set<string>>(new Set());
-  const postInitializedRef = useRef(false);
-  const seenCommentIdsRef = useRef<Set<string>>(new Set());
-  const commentInitializedRef = useRef(false);
-  const seenThreadActivityRef = useRef<Map<string, number>>(new Map());
-  const threadInitializedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,6 +213,17 @@ export const usePortalNotifications = (pathname: string) => {
     [updateReadState],
   );
 
+  const markBuildRead = useCallback(
+    (nextBuildId: string) => {
+      if (!nextBuildId) return;
+      updateReadState((current) => ({
+        ...current,
+        appBuilds: mergeUnique(current.appBuilds, [nextBuildId]),
+      }));
+    },
+    [updateReadState],
+  );
+
   const markThreadRead = useCallback(
     (threadId: string, lastMessageAt?: unknown) => {
       if (!threadId) return;
@@ -231,6 +238,56 @@ export const usePortalNotifications = (pathname: string) => {
       }));
     },
     [updateReadState],
+  );
+
+  useEffect(() => {
+    if (isDemoMode) return;
+    if (!profile) return;
+    if (!buildId) return;
+
+    const buildStorageKey = `familyreunion:last_build_id:${myUid || 'guest'}`;
+    const lastBuildId = localStorage.getItem(buildStorageKey);
+    let cancelled = false;
+
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+
+      if (lastBuildId && lastBuildId !== buildId) {
+        setAvailableBuildUpdate((current) =>
+          current?.buildId === buildId ? current : { buildId, detectedAt: Date.now() },
+        );
+        return;
+      }
+
+      if (lastBuildId === buildId) {
+        setAvailableBuildUpdate((current) => (current?.buildId === buildId ? null : current));
+      }
+    });
+
+    localStorage.setItem(buildStorageKey, buildId);
+    return () => {
+      cancelled = true;
+    };
+  }, [buildId, isDemoMode, myUid, profile]);
+
+  const appUpdateItems = useMemo<PortalNotificationItem[]>(
+    () =>
+      availableBuildUpdate
+        ? [
+            {
+              id: `app-update:${availableBuildUpdate.buildId}`,
+              kind: 'app-update',
+              title: 'App update available',
+              body: `Build ${availableBuildUpdate.buildId} is ready. Click to refresh the app.`,
+              href: pathname,
+              createdAtLabel: 'Refresh available',
+              createdAtMs: availableBuildUpdate.detectedAt,
+              unread: readStateLoaded && !readState.appBuilds.includes(availableBuildUpdate.buildId),
+              action: 'refresh-app',
+            },
+          ]
+        : [],
+    [availableBuildUpdate, pathname, readState.appBuilds, readStateLoaded],
   );
 
   const pendingItems = useMemo<PortalNotificationItem[]>(() => {
@@ -316,10 +373,10 @@ export const usePortalNotifications = (pathname: string) => {
 
   const items = useMemo(
     () =>
-      [...directMessageItems, ...bulletinCommentItems, ...bulletinPostItems, ...pendingItems].sort(
+      [...appUpdateItems, ...directMessageItems, ...bulletinCommentItems, ...bulletinPostItems, ...pendingItems].sort(
         (left, right) => right.createdAtMs - left.createdAtMs,
       ),
-    [bulletinCommentItems, bulletinPostItems, directMessageItems, pendingItems],
+    [appUpdateItems, bulletinCommentItems, bulletinPostItems, directMessageItems, pendingItems],
   );
 
   const unreadCount = useMemo(
@@ -344,13 +401,18 @@ export const usePortalNotifications = (pathname: string) => {
         return;
       }
 
+      if (item.kind === 'app-update') {
+        markBuildRead(item.id.replace('app-update:', ''));
+        return;
+      }
+
       if (item.kind === 'direct-message') {
         const threadId = item.id.replace('thread:', '');
         const thread = threads.find((entry) => entry.id === threadId);
         markThreadRead(threadId, thread?.lastMessageAt);
       }
     },
-    [markCommentsRead, markPendingRead, markPostsRead, markThreadRead, threads],
+    [markBuildRead, markCommentsRead, markPendingRead, markPostsRead, markThreadRead, threads],
   );
 
   const markAllRead = useCallback(() => {
@@ -377,10 +439,14 @@ export const usePortalNotifications = (pathname: string) => {
           current.pending,
           pendingItems.map((item) => item.id.replace('pending:', '')),
         ),
+        appBuilds: mergeUnique(
+          current.appBuilds,
+          appUpdateItems.map((item) => item.id.replace('app-update:', '')),
+        ),
         threads: nextThreads,
       };
     });
-  }, [bulletinCommentItems, bulletinPostItems, pendingItems, threads, updateReadState]);
+  }, [appUpdateItems, bulletinCommentItems, bulletinPostItems, pendingItems, threads, updateReadState]);
 
   useEffect(() => {
     if (!readStateLoaded) {
@@ -445,118 +511,6 @@ export const usePortalNotifications = (pathname: string) => {
       void badgeNavigator.clearAppBadge().catch(() => undefined);
     }
   }, [unreadCount]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    if (!profile) return;
-
-    const nextPending = new Set(pendingUsers.map((user) => user.uid));
-
-    if (!pendingInitializedRef.current) {
-      pendingInitializedRef.current = true;
-      seenPendingUidsRef.current = nextPending;
-      return;
-    }
-
-    if (isAdminOrOrganizer) {
-      for (const uid of nextPending) {
-        if (!seenPendingUidsRef.current.has(uid)) {
-          notify('New join request received.', 'updated');
-          maybeSystemNotify('New join request', 'A member request is waiting for approval.');
-        }
-      }
-    }
-
-    seenPendingUidsRef.current = nextPending;
-  }, [isAdminOrOrganizer, isDemoMode, notify, pendingUsers, profile]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    if (!profile) return;
-    if (!myUid) return;
-
-    const nextPostIds = new Set(posts.map((post) => post.id));
-
-    if (!postInitializedRef.current) {
-      if (nextPostIds.size === 0) return;
-      postInitializedRef.current = true;
-      seenPostIdsRef.current = nextPostIds;
-      return;
-    }
-
-    for (const post of posts as BulletinPost[]) {
-      if (!seenPostIdsRef.current.has(post.id) && post.authorUid !== myUid) {
-        const author = formatShortAuthor(post.authorName, post.authorUid);
-        const body = `${author} published a new bulletin post.`;
-        notify(body, 'updated');
-        maybeSystemNotify('New bulletin post', body);
-      }
-    }
-
-    seenPostIdsRef.current = nextPostIds;
-  }, [isDemoMode, myUid, notify, posts, profile]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    if (!profile) return;
-    if (!myUid) return;
-
-    const nextCommentIds = new Set(comments.map((comment) => comment.id));
-
-    if (!commentInitializedRef.current) {
-      if (nextCommentIds.size === 0) return;
-      commentInitializedRef.current = true;
-      seenCommentIdsRef.current = nextCommentIds;
-      return;
-    }
-
-    for (const comment of comments as BulletinComment[]) {
-      if (!seenCommentIdsRef.current.has(comment.id) && extractMentionedUserUids(comment.body).includes(myUid)) {
-        const author = formatShortAuthor(comment.authorName, comment.authorUid);
-        const body = `Bulletin reply by ${author} mentions you.`;
-        notify(body, 'updated');
-        maybeSystemNotify('You were mentioned', body);
-      }
-    }
-
-    seenCommentIdsRef.current = nextCommentIds;
-  }, [comments, isDemoMode, myUid, notify, profile]);
-
-  useEffect(() => {
-    if (isDemoMode) return;
-    if (!profile) return;
-    if (!myUid) return;
-
-    const nextThreadActivity = new Map(
-      threads.map((thread) => [thread.id, toTimestamp(thread.lastMessageAt)]),
-    );
-
-    if (!threadInitializedRef.current) {
-      threadInitializedRef.current = true;
-      seenThreadActivityRef.current = nextThreadActivity;
-      return;
-    }
-
-    for (const thread of threads) {
-      const lastMessageAtMs = toTimestamp(thread.lastMessageAt);
-      const previousMessageAtMs = seenThreadActivityRef.current.get(thread.id) ?? 0;
-      if (lastMessageAtMs <= previousMessageAtMs) {
-        continue;
-      }
-      if (!thread.lastMessageAuthorUid || thread.lastMessageAuthorUid === myUid) {
-        continue;
-      }
-
-      const sender =
-        thread.lastMessageAuthorName ??
-        getThreadOtherParticipantLabel(thread, myDisplayName);
-      const body = thread.lastMessageText ?? 'Open the conversation to read the latest message.';
-      notify(`New message from ${sender}.`, 'updated');
-      maybeSystemNotify(`New message from ${sender}`, body);
-    }
-
-    seenThreadActivityRef.current = nextThreadActivity;
-  }, [isDemoMode, myDisplayName, myUid, notify, profile, threads]);
 
   return {
     items,
