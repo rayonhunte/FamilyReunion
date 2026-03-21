@@ -672,17 +672,19 @@ export const sendThreadMessage = async (
   }
 
   try {
-    await setDoc(
-      doc(db!, 'threads', threadId),
-      {
-        participantIds,
-        participantKey: participantKeyFor(participantIds),
-        participantNames,
-        lastMessageText: payload.body,
-        lastMessageAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
+  await setDoc(
+    doc(db!, 'threads', threadId),
+    {
+      participantIds,
+      participantKey: participantKeyFor(participantIds),
+      participantNames,
+      lastMessageAuthorUid: payload.authorUid,
+      lastMessageAuthorName: payload.authorName,
+      lastMessageText: payload.body,
+      lastMessageAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Missing or insufficient permissions.';

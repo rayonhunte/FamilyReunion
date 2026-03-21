@@ -1,11 +1,11 @@
-import { useEffect, useState, type ReactElement } from 'react';
-import { NavLink, Navigate, useLocation } from 'react-router-dom';
-import { NotificationHub } from '../../components/NotificationHub';
+import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { env } from '../../lib/env';
 import { requestSystemNotificationPermission } from '../../lib/systemNotifications';
 import { menuNavItems, primaryNavItems } from './navConfig';
 import { PortalRoutes } from '../routes/PortalRoutes';
+import { usePortalNotifications } from './usePortalNotifications';
 
 export const PortalShell = ({
   overview,
@@ -40,18 +40,27 @@ export const PortalShell = ({
 }) => {
   const { profile: userProfile, signOutUser, isDemoMode } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const isAdmin = userProfile?.role === 'admin';
   const isOrganizer = userProfile?.role === 'organizer';
   const canAccessOrganizerHub = isAdmin || isOrganizer;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [notificationMenuOpen, setNotificationMenuOpen] = useState(false);
   const [phoneNotifPermission, setPhoneNotifPermission] = useState<NotificationPermission | null>(() => {
     if (typeof Notification === 'undefined') return null;
     return Notification.permission;
   });
+  const notificationMenuRef = useRef<HTMLDivElement | null>(null);
+  const { items: notificationItems, unreadCount, markAllRead, markNotificationRead } = usePortalNotifications(location.pathname);
+
+  const visibleNotifications = notificationItems.slice(0, 8);
 
   // Close drawer when route changes (browser back, etc.).
   useEffect(() => {
-    const t = requestAnimationFrame(() => setMenuOpen(false));
+    const t = requestAnimationFrame(() => {
+      setMenuOpen(false);
+      setNotificationMenuOpen(false);
+    });
     return () => cancelAnimationFrame(t);
   }, [location.pathname]);
 
@@ -63,6 +72,29 @@ export const PortalShell = ({
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [menuOpen]);
+
+  useEffect(() => {
+    if (!notificationMenuOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setNotificationMenuOpen(false);
+      }
+    };
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (!notificationMenuRef.current?.contains(event.target as Node)) {
+        setNotificationMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('mousedown', onPointerDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('mousedown', onPointerDown);
+    };
+  }, [notificationMenuOpen]);
 
   const enablePhoneNotifications = async () => {
     const perm = await requestSystemNotificationPermission();
@@ -84,6 +116,15 @@ export const PortalShell = ({
   });
 
   const visibleMenu = menuNavItems.filter((item) => !item.adminOnly || isAdmin);
+
+  const openNotification = (href: string, notificationId?: string) => {
+    const item = notificationId ? notificationItems.find((entry) => entry.id === notificationId) : null;
+    if (item) {
+      markNotificationRead(item);
+    }
+    setNotificationMenuOpen(false);
+    navigate(href);
+  };
 
   return (
     <div className="portal-page">
@@ -119,6 +160,68 @@ export const PortalShell = ({
           </button>
         </nav>
         <div className="portal-actions">
+          <div className="portal-notification-menu" ref={notificationMenuRef}>
+            <button
+              type="button"
+              className={`ghost-button portal-bell-button ${notificationMenuOpen ? 'is-open' : ''}`}
+              aria-expanded={notificationMenuOpen}
+              aria-haspopup="menu"
+              aria-controls="portal-notification-panel"
+              aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
+              onClick={() => setNotificationMenuOpen((open) => !open)}
+            >
+              <span className="portal-bell-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path
+                    d="M12 3.5a4.5 4.5 0 0 0-4.5 4.5v2.32c0 .78-.2 1.55-.59 2.23l-1.14 2A1.5 1.5 0 0 0 7.07 17h9.86a1.5 1.5 0 0 0 1.3-2.25l-1.14-2c-.39-.68-.59-1.45-.59-2.23V8A4.5 4.5 0 0 0 12 3.5Zm0 17a2.75 2.75 0 0 1-2.58-1.8h5.16A2.75 2.75 0 0 1 12 20.5Z"
+                    fill="currentColor"
+                  />
+                </svg>
+              </span>
+              <span className="portal-bell-label">Alerts</span>
+              {unreadCount > 0 ? <span className="portal-notification-badge">{Math.min(unreadCount, 99)}</span> : null}
+            </button>
+
+            {notificationMenuOpen ? (
+              <div
+                id="portal-notification-panel"
+                className="portal-notification-panel"
+                role="menu"
+                aria-label="Notifications"
+              >
+                <div className="portal-notification-panel-head">
+                  <div>
+                    <strong>Notifications</strong>
+                    <p>{unreadCount > 0 ? `${unreadCount} unread` : 'You are all caught up'}</p>
+                  </div>
+                  {unreadCount > 0 ? (
+                    <button type="button" className="ghost-button" onClick={markAllRead}>
+                      Mark all read
+                    </button>
+                  ) : null}
+                </div>
+                <div className="portal-notification-list">
+                  {visibleNotifications.length === 0 ? (
+                    <p className="helper-text portal-notification-empty">No new messages or bulletin updates yet.</p>
+                  ) : (
+                    visibleNotifications.map((item) => (
+                      <button
+                        type="button"
+                        key={item.id}
+                        className={`portal-notification-item ${item.unread ? 'is-unread' : ''}`}
+                        role="menuitem"
+                        onClick={() => openNotification(item.href, item.id)}
+                      >
+                        <span className={`portal-notification-type type-${item.kind}`}>{item.title}</span>
+                        <strong>{item.body}</strong>
+                        <span>{item.createdAtLabel}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
           <div className="portal-actions-right">
             <button className="ghost-button" onClick={() => void signOutUser()}>
               Sign out
@@ -179,7 +282,6 @@ export const PortalShell = ({
       ) : null}
 
       <main className="content-shell portal-content">
-        <NotificationHub />
         <PortalRoutes
           overview={overview}
           profile={profile}

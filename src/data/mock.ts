@@ -212,6 +212,8 @@ export const demoThreads: Thread[] = [
     participantIds: ['demo-admin', 'maya-james'],
     participantKey: 'demo-admin__maya-james',
     participantNames: ['Reunion Admin', 'Maya James'],
+    lastMessageAuthorUid: 'maya-james',
+    lastMessageAuthorName: 'Maya James',
     lastMessageText: 'The hotel block rates are confirmed.',
     lastMessageAt: '2026-03-04T10:00:00.000Z',
     updatedAt: '2026-03-04T10:00:00.000Z',
