@@ -175,6 +175,8 @@ export interface Thread {
   participantKey: string;
   participantNames: string[];
   lastMessageText?: string;
+  lastMessageAuthorUid?: string | null;
+  lastMessageAuthorName?: string | null;
   lastMessageAt?: unknown;
   updatedAt?: unknown;
 }
