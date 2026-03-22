@@ -106,7 +106,23 @@ const persistNotificationReadState = (storageKey: string | null, readState: Noti
   localStorage.setItem(storageKey, JSON.stringify(readState));
 };
 
-const mergeUnique = (current: string[], incoming: string[]) => Array.from(new Set([...current, ...incoming]));
+const mergeUnique = (current: string[], incoming: string[]) => {
+  if (incoming.length === 0) {
+    return current;
+  }
+
+  const merged = new Set(current);
+  let changed = false;
+
+  for (const entry of incoming) {
+    if (!merged.has(entry)) {
+      merged.add(entry);
+      changed = true;
+    }
+  }
+
+  return changed ? Array.from(merged) : current;
+};
 
 const getThreadOtherParticipantLabel = (thread: Thread, currentDisplayName: string) =>
   thread.participantNames.filter((name) => name !== currentDisplayName).join(', ') || 'Your thread';
@@ -171,9 +187,13 @@ export const usePortalNotifications = (pathname: string) => {
 
       setStoredReadState((current) => {
         const base = current.key === storageKey ? current.value : loadNotificationReadState(storageKey);
+        const nextValue = updater(base);
+        if (current.key === storageKey && nextValue === base) {
+          return current;
+        }
         return {
           key: storageKey,
-          value: updater(base),
+          value: nextValue,
         };
       });
     },
@@ -183,10 +203,10 @@ export const usePortalNotifications = (pathname: string) => {
   const markPostsRead = useCallback(
     (postIds: string[]) => {
       if (postIds.length === 0) return;
-      updateReadState((current) => ({
-        ...current,
-        posts: mergeUnique(current.posts, postIds),
-      }));
+      updateReadState((current) => {
+        const posts = mergeUnique(current.posts, postIds);
+        return posts === current.posts ? current : { ...current, posts };
+      });
     },
     [updateReadState],
   );
@@ -194,10 +214,10 @@ export const usePortalNotifications = (pathname: string) => {
   const markCommentsRead = useCallback(
     (commentIds: string[]) => {
       if (commentIds.length === 0) return;
-      updateReadState((current) => ({
-        ...current,
-        comments: mergeUnique(current.comments, commentIds),
-      }));
+      updateReadState((current) => {
+        const comments = mergeUnique(current.comments, commentIds);
+        return comments === current.comments ? current : { ...current, comments };
+      });
     },
     [updateReadState],
   );
@@ -205,10 +225,10 @@ export const usePortalNotifications = (pathname: string) => {
   const markPendingRead = useCallback(
     (pendingUids: string[]) => {
       if (pendingUids.length === 0) return;
-      updateReadState((current) => ({
-        ...current,
-        pending: mergeUnique(current.pending, pendingUids),
-      }));
+      updateReadState((current) => {
+        const pending = mergeUnique(current.pending, pendingUids);
+        return pending === current.pending ? current : { ...current, pending };
+      });
     },
     [updateReadState],
   );
@@ -216,10 +236,10 @@ export const usePortalNotifications = (pathname: string) => {
   const markBuildRead = useCallback(
     (nextBuildId: string) => {
       if (!nextBuildId) return;
-      updateReadState((current) => ({
-        ...current,
-        appBuilds: mergeUnique(current.appBuilds, [nextBuildId]),
-      }));
+      updateReadState((current) => {
+        const appBuilds = mergeUnique(current.appBuilds, [nextBuildId]);
+        return appBuilds === current.appBuilds ? current : { ...current, appBuilds };
+      });
     },
     [updateReadState],
   );
@@ -229,13 +249,20 @@ export const usePortalNotifications = (pathname: string) => {
       if (!threadId) return;
 
       const readAt = Math.max(toTimestamp(lastMessageAt), Date.now());
-      updateReadState((current) => ({
-        ...current,
-        threads: {
-          ...current.threads,
-          [threadId]: Math.max(current.threads[threadId] ?? 0, readAt),
-        },
-      }));
+      updateReadState((current) => {
+        const previousReadAt = current.threads[threadId] ?? 0;
+        if (readAt <= previousReadAt) {
+          return current;
+        }
+
+        return {
+          ...current,
+          threads: {
+            ...current.threads,
+            [threadId]: readAt,
+          },
+        };
+      });
     },
     [updateReadState],
   );
@@ -417,33 +444,53 @@ export const usePortalNotifications = (pathname: string) => {
 
   const markAllRead = useCallback(() => {
     updateReadState((current) => {
+      let threadsChanged = false;
       const nextThreads = { ...current.threads };
 
       for (const thread of threads) {
         const lastMessageAtMs = toTimestamp(thread.lastMessageAt);
         if (lastMessageAtMs > 0) {
-          nextThreads[thread.id] = Math.max(nextThreads[thread.id] ?? 0, lastMessageAtMs);
+          const nextReadAt = Math.max(nextThreads[thread.id] ?? 0, lastMessageAtMs);
+          if (nextReadAt !== (nextThreads[thread.id] ?? 0)) {
+            nextThreads[thread.id] = nextReadAt;
+            threadsChanged = true;
+          }
         }
       }
 
+      const posts = mergeUnique(
+        current.posts,
+        bulletinPostItems.map((item) => item.id.replace('post:', '')),
+      );
+      const comments = mergeUnique(
+        current.comments,
+        bulletinCommentItems.map((item) => item.id.replace('comment:', '')),
+      );
+      const pending = mergeUnique(
+        current.pending,
+        pendingItems.map((item) => item.id.replace('pending:', '')),
+      );
+      const appBuilds = mergeUnique(
+        current.appBuilds,
+        appUpdateItems.map((item) => item.id.replace('app-update:', '')),
+      );
+
+      if (
+        posts === current.posts &&
+        comments === current.comments &&
+        pending === current.pending &&
+        appBuilds === current.appBuilds &&
+        !threadsChanged
+      ) {
+        return current;
+      }
+
       return {
-        posts: mergeUnique(
-          current.posts,
-          bulletinPostItems.map((item) => item.id.replace('post:', '')),
-        ),
-        comments: mergeUnique(
-          current.comments,
-          bulletinCommentItems.map((item) => item.id.replace('comment:', '')),
-        ),
-        pending: mergeUnique(
-          current.pending,
-          pendingItems.map((item) => item.id.replace('pending:', '')),
-        ),
-        appBuilds: mergeUnique(
-          current.appBuilds,
-          appUpdateItems.map((item) => item.id.replace('app-update:', '')),
-        ),
-        threads: nextThreads,
+        posts,
+        comments,
+        pending,
+        appBuilds,
+        threads: threadsChanged ? nextThreads : current.threads,
       };
     });
   }, [appUpdateItems, bulletinCommentItems, bulletinPostItems, pendingItems, threads, updateReadState]);

@@ -1,7 +1,7 @@
-import type { ReactElement } from 'react';
+import { memo, type ReactElement } from 'react';
 import { Route, Routes } from 'react-router-dom';
 
-export function PortalRoutes({
+export const PortalRoutes = memo(function PortalRoutes({
   overview,
   profile,
   registration,
@@ -51,4 +51,4 @@ export function PortalRoutes({
       <Route path="admin" element={admin} />
     </Routes>
   );
-}
+});
