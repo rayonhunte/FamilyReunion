@@ -18,6 +18,7 @@ import {
   addBulletinComment,
   createBulletinPost,
   createEvent,
+  createFamilyPerson,
   createFlight,
   createHotel,
   createOrGetDirectThread,
@@ -41,6 +42,7 @@ import {
   updateRelationship,
   uploadAsset,
   uploadBulletinAttachment,
+  uploadFamilyPersonPhoto,
   uploadProfileImage,
   useAssociatedAssets,
   useAssets,
@@ -50,6 +52,7 @@ import {
   useDirectory,
   useEventRsvps,
   useEvents,
+  useFamilyPeople,
   useFamilyRelationships,
   useFlights,
   useHotels,
@@ -2340,6 +2343,17 @@ function FamilyTreeEdge({
 
 const familyTreeEdgeTypes = { familyRelationship: FamilyTreeEdge };
 
+type FamilyTreePerson = {
+  id: string;
+  displayName: string;
+  photoURL?: string | null;
+  source: 'directory' | 'manual';
+  linkedUserUid?: string | null;
+  isDeceased?: boolean;
+  birthYear?: string | null;
+  deathYear?: string | null;
+};
+
 function FamilyTreeFlowChart({ flowNodes, flowEdges }: { flowNodes: FlowNode[]; flowEdges: FlowEdge[] }) {
   const [nodes, setNodes] = useState<FlowNode[]>(flowNodes);
   const [edges, setEdges] = useState<FlowEdge[]>(flowEdges);
@@ -2381,7 +2395,9 @@ function FamilyTreePage() {
   const { profile } = useAuth();
   const { notify } = useNotification();
   const { data: directory } = useDirectory();
+  const { data: familyPeople } = useFamilyPeople();
   const { data: relationships } = useFamilyRelationships();
+  const myUid = profile?.uid ?? '';
   const [viewMode, setViewMode] = useState<'my' | 'full'>('my');
   const [treeModalOpen, setTreeModalOpen] = useState(false);
   useEffect(() => {
@@ -2392,35 +2408,90 @@ function FamilyTreePage() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [treeModalOpen]);
-  const [addForm, setAddForm] = useState<{ toUid: string; relationshipType: RelationshipType }>({ toUid: '', relationshipType: 'parent' });
+  const [addForm, setAddForm] = useState<{ toPersonId: string; relationshipType: RelationshipType }>({ toPersonId: '', relationshipType: 'parent' });
+  const [manualForm, setManualForm] = useState<{
+    displayName: string;
+    birthYear: string;
+    deathYear: string;
+    relationshipType: RelationshipType;
+    isDeceased: boolean;
+  }>({
+    displayName: '',
+    birthYear: '',
+    deathYear: '',
+    relationshipType: 'parent',
+    isDeceased: true,
+  });
+  const [manualPhotoFile, setManualPhotoFile] = useState<File | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingType, setEditingType] = useState<RelationshipType | null>(null);
 
+  const allPeople = useMemo<FamilyTreePerson[]>(() => {
+    const items = new Map<string, FamilyTreePerson>();
+
+    for (const member of directory) {
+      items.set(member.uid, {
+        id: member.uid,
+        displayName: member.displayName,
+        photoURL: member.photoURL ?? null,
+        source: 'directory',
+        linkedUserUid: member.uid,
+      });
+    }
+
+    if (profile && !items.has(profile.uid)) {
+      items.set(profile.uid, {
+        id: profile.uid,
+        displayName: profile.displayName ?? 'You',
+        photoURL: profile.photoURL ?? null,
+        source: 'directory',
+        linkedUserUid: profile.uid,
+      });
+    }
+
+    for (const person of familyPeople) {
+      items.set(person.id, {
+        id: person.id,
+        displayName: person.displayName,
+        photoURL: person.photoURL ?? null,
+        source: 'manual',
+        linkedUserUid: person.linkedUserUid ?? null,
+        isDeceased: person.isDeceased ?? false,
+        birthYear: person.birthYear ?? null,
+        deathYear: person.deathYear ?? null,
+      });
+    }
+
+    return Array.from(items.values()).sort((left, right) => left.displayName.localeCompare(right.displayName));
+  }, [directory, familyPeople, profile]);
+
+  const peopleById = useMemo(() => new Map(allPeople.map((person) => [person.id, person])), [allPeople]);
+
   /** Members you don't already have any relationship edge with (either direction). */
-  const uidsRelatedToMe = useMemo(() => {
+  const peopleRelatedToMe = useMemo(() => {
     const s = new Set<string>();
-    const me = profile?.uid;
+    const me = myUid;
     if (!me) return s;
     for (const r of relationships) {
       if (r.fromUid === me) s.add(r.toUid);
       if (r.toUid === me) s.add(r.fromUid);
     }
     return s;
-  }, [relationships, profile?.uid]);
+  }, [myUid, relationships]);
 
-  const membersSelectableForNewRel = useMemo(
-    () => directory.filter((m) => m.uid !== profile?.uid && !uidsRelatedToMe.has(m.uid)),
-    [directory, profile?.uid, uidsRelatedToMe],
+  const peopleSelectableForNewRel = useMemo(
+    () => allPeople.filter((person) => person.id !== myUid && !peopleRelatedToMe.has(person.id)),
+    [allPeople, myUid, peopleRelatedToMe],
   );
-  const addToUid = addForm.toUid && !uidsRelatedToMe.has(addForm.toUid) ? addForm.toUid : '';
+  const addToPersonId = addForm.toPersonId && !peopleRelatedToMe.has(addForm.toPersonId) ? addForm.toPersonId : '';
   const myRelationshipIds = useMemo(
     () =>
       new Set(
         relationships.flatMap((r) =>
-          r.fromUid === profile?.uid || r.toUid === profile?.uid ? [r.id] : [],
+          r.fromUid === myUid || r.toUid === myUid ? [r.id] : [],
         ),
       ),
-    [relationships, profile?.uid],
+    [myUid, relationships],
   );
   const myRelationships = useMemo(
     () => relationships.filter((r) => myRelationshipIds.has(r.id)),
@@ -2431,18 +2502,77 @@ function FamilyTreePage() {
 
   const onSubmitAdd = async (e: FormEvent) => {
     e.preventDefault();
-    if (!profile || !addToUid) return;
+    if (!profile || !addToPersonId) return;
     const id = await createRelationship({
       fromUid: profile.uid,
-      toUid: addToUid,
+      toUid: addToPersonId,
       relationshipType: addForm.relationshipType,
       createdBy: profile.uid,
     });
     if (id) {
       await logAuditEvent(profile.uid, profile.displayName, 'create', 'family_relationship', id, addForm.relationshipType);
       notify('Relationship added.', 'saved');
-      setAddForm({ toUid: '', relationshipType: 'parent' });
+      setAddForm({ toPersonId: '', relationshipType: 'parent' });
     }
+  };
+
+  const onSubmitManualMember = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!profile) return;
+
+    const displayName = manualForm.displayName.trim();
+    if (!displayName) {
+      notify('Please enter a family member name.', 'error');
+      return;
+    }
+
+    const personId = await createFamilyPerson({
+      linkedUserUid: null,
+      displayName,
+      photoURL: null,
+      birthYear: manualForm.birthYear.trim() || null,
+      deathYear: manualForm.isDeceased ? manualForm.deathYear.trim() || null : null,
+      isDeceased: manualForm.isDeceased,
+      createdBy: profile.uid,
+    });
+
+    if (!personId) {
+      notify('Could not create family member.', 'error');
+      return;
+    }
+
+    if (manualPhotoFile) {
+      await uploadFamilyPersonPhoto(personId, manualPhotoFile);
+    }
+
+    const relationshipId = await createRelationship({
+      fromUid: profile.uid,
+      toUid: personId,
+      relationshipType: manualForm.relationshipType,
+      createdBy: profile.uid,
+    });
+
+    await logAuditEvent(profile.uid, profile.displayName, 'create', 'family_person', personId, displayName);
+    if (relationshipId) {
+      await logAuditEvent(
+        profile.uid,
+        profile.displayName,
+        'create',
+        'family_relationship',
+        relationshipId,
+        manualForm.relationshipType,
+      );
+    }
+
+    notify('Family member added to the tree.', 'saved');
+    setManualForm({
+      displayName: '',
+      birthYear: '',
+      deathYear: '',
+      relationshipType: 'parent',
+      isDeceased: true,
+    });
+    setManualPhotoFile(null);
   };
 
   const onSaveEdit = async () => {
@@ -2461,21 +2591,21 @@ function FamilyTreePage() {
     notify('Relationship removed.', 'deleted');
   };
 
-  const memberByUid = (uid: string) => directory.find((m) => m.uid === uid);
+  const personById = (personId: string) => peopleById.get(personId);
   const labelForRel = (r: FamilyRelationship) => {
     const from =
-      r.fromUid === profile?.uid
-        ? (profile.displayName ?? 'You')
-        : (memberByUid(r.fromUid)?.displayName ?? r.fromUid);
+      r.fromUid === myUid
+        ? (profile?.displayName ?? 'You')
+        : (personById(r.fromUid)?.displayName ?? r.fromUid);
     const to =
-      r.toUid === profile?.uid
-        ? (profile.displayName ?? 'You')
-        : (memberByUid(r.toUid)?.displayName ?? r.toUid);
+      r.toUid === myUid
+        ? (profile?.displayName ?? 'You')
+        : (personById(r.toUid)?.displayName ?? r.toUid);
     return `${from} → ${to} (${r.relationshipType})`;
   };
 
-  const nodeUidsMy = useMemo(() => {
-    const uid = profile?.uid ?? '';
+  const nodeIdsMy = useMemo(() => {
+    const uid = myUid;
     const set = new Set<string>(uid ? [uid] : []);
     relationships.forEach((r) => {
       if (r.fromUid === uid || r.toUid === uid) {
@@ -2484,60 +2614,44 @@ function FamilyTreePage() {
       }
     });
     return Array.from(set);
-  }, [profile?.uid, relationships]);
+  }, [myUid, relationships]);
 
-  const nodeUidsFull = useMemo(() => {
-    const uids = new Set(directory.map((m) => m.uid));
-    if (profile?.uid) uids.add(profile.uid);
-    return Array.from(uids);
-  }, [directory, profile]);
+  const nodeIdsFull = useMemo(() => {
+    const ids = new Set(allPeople.map((person) => person.id));
+    relationships.forEach((relationship) => {
+      ids.add(relationship.fromUid);
+      ids.add(relationship.toUid);
+    });
+    if (myUid) ids.add(myUid);
+    return Array.from(ids);
+  }, [allPeople, myUid, relationships]);
   const edgesMy = useMemo(
-    () => relationships.filter((r) => nodeUidsMy.includes(r.fromUid) && nodeUidsMy.includes(r.toUid)),
-    [relationships, nodeUidsMy],
+    () => relationships.filter((r) => nodeIdsMy.includes(r.fromUid) && nodeIdsMy.includes(r.toUid)),
+    [relationships, nodeIdsMy],
   );
   const edgesFull = relationships;
 
   const nodesMy = useMemo(() => {
-    const members: DirectoryMember[] = [];
-    for (const uid of nodeUidsMy) {
-      const m = directory.find((md) => md.uid === uid);
-      if (m) {
-        members.push(m);
-      } else if (uid === profile?.uid && profile) {
-        members.push({
-          id: profile.id ?? profile.uid,
-          uid: profile.uid,
-          displayName: profile.displayName ?? 'You',
-          email: profile.email ?? '',
-          photoURL: profile.photoURL ?? null,
-          role: profile.role,
-          groupId: profile.groupId ?? null,
-        });
+    const people: FamilyTreePerson[] = [];
+    for (const personId of nodeIdsMy) {
+      const person = peopleById.get(personId);
+      if (person) {
+        people.push(person);
       }
     }
-    return members;
-  }, [nodeUidsMy, directory, profile]);
+    return people;
+  }, [nodeIdsMy, peopleById]);
   const nodesFull = useMemo(() => {
-    const members: DirectoryMember[] = [];
-    for (const uid of nodeUidsFull) {
-      const m = directory.find((md) => md.uid === uid);
-      if (m) {
-        members.push(m);
-      } else if (uid === profile?.uid && profile) {
-        members.push({
-          id: profile.id ?? profile.uid,
-          uid: profile.uid,
-          displayName: profile.displayName ?? 'You',
-          email: profile.email ?? '',
-          photoURL: profile.photoURL ?? null,
-          role: profile.role,
-          groupId: profile.groupId ?? null,
-        });
+    const people: FamilyTreePerson[] = [];
+    for (const personId of nodeIdsFull) {
+      const person = peopleById.get(personId);
+      if (person) {
+        people.push(person);
       }
     }
-    return members;
-  }, [nodeUidsFull, directory, profile]);
-  const centerUid = viewMode === 'my' ? profile?.uid ?? null : null;
+    return people;
+  }, [nodeIdsFull, peopleById]);
+  const centerUid = viewMode === 'my' ? myUid || null : null;
   const nodes = viewMode === 'my' ? nodesMy : nodesFull;
   const edges = viewMode === 'my' ? edgesMy : edgesFull;
 
@@ -2548,7 +2662,7 @@ function FamilyTreePage() {
   const radius = Math.min(graphWidth, graphHeight) * 0.38;
   const nodePositions = useMemo(() => {
     const map: Record<string, { x: number; y: number }> = {};
-    const list = viewMode === 'my' ? nodeUidsMy : nodeUidsFull;
+    const list = viewMode === 'my' ? nodeIdsMy : nodeIdsFull;
     if (viewMode === 'my' && centerUid) {
       map[centerUid] = { x: centerX, y: centerY };
       const onCircle = list.filter((uid) => uid !== centerUid);
@@ -2569,21 +2683,21 @@ function FamilyTreePage() {
       });
     }
     return map;
-  }, [viewMode, centerUid, nodeUidsMy, nodeUidsFull, centerX, centerY, radius]);
+  }, [viewMode, centerUid, nodeIdsMy, nodeIdsFull, centerX, centerY, radius]);
 
   const flowNodes: FlowNode[] = useMemo(() => {
     return nodes
-      .filter((m) => nodePositions[m.uid])
-      .map((member) => ({
-        id: member.uid,
+      .filter((person) => nodePositions[person.id])
+      .map((person) => ({
+        id: person.id,
         type: 'familyMember',
-        position: nodePositions[member.uid] ?? { x: 0, y: 0 },
+        position: nodePositions[person.id] ?? { x: 0, y: 0 },
         data: {
-          uid: member.uid,
-          label: member.displayName,
-          initials: getSingleInitial(member.displayName),
-          photoURL: member.photoURL ?? null,
-          isCenter: member.uid === centerUid,
+          uid: person.id,
+          label: `${person.displayName}${person.isDeceased ? ' †' : ''}`,
+          initials: getSingleInitial(person.displayName),
+          photoURL: person.photoURL ?? null,
+          isCenter: person.id === centerUid,
         },
       }));
   }, [nodes, nodePositions, centerUid]);
@@ -2610,34 +2724,34 @@ function FamilyTreePage() {
       <SectionIntro
         eyebrow="Family tree"
         title="Relationships and connections"
-        body="Add your relationship to other family members and explore the tree. Your view starts with you at the center; the full tree shows everyone."
+        body="Add relationships to portal members and manually add relatives who do not have accounts. Your view starts with you at the center; the full tree shows both registered and offline family members."
       />
       <div className="content-grid two-up">
         <Card accent="warm">
-          <SectionHeader title="Add relationship" meta="You and another member" />
+          <SectionHeader title="Add relationship" meta="You and another person on the tree" />
           <form className="form-grid" onSubmit={onSubmitAdd}>
             <label>
-              Family member
+              Family person
               <select
-                value={addToUid}
-                onChange={(e) => setAddForm((f) => ({ ...f, toUid: e.target.value }))}
+                value={addToPersonId}
+                onChange={(e) => setAddForm((f) => ({ ...f, toPersonId: e.target.value }))}
                 aria-label="Select family member"
-                disabled={membersSelectableForNewRel.length === 0}
+                disabled={peopleSelectableForNewRel.length === 0}
               >
                 <option value="">
-                  {membersSelectableForNewRel.length === 0
+                  {peopleSelectableForNewRel.length === 0
                     ? '— No members left to add —'
                     : '— Select —'}
                 </option>
-                {membersSelectableForNewRel.map((m) => (
-                  <option key={m.uid} value={m.uid}>
-                    {m.displayName}
+                {peopleSelectableForNewRel.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.displayName}{person.source === 'manual' ? ' (manual)' : ''}
                   </option>
                 ))}
               </select>
-              {membersSelectableForNewRel.length === 0 ? (
+              {peopleSelectableForNewRel.length === 0 ? (
                 <p className="helper-text relationship-add-empty-hint">
-                  Everyone in the directory is already connected to you on the tree. Remove a relationship below to
+                  Everyone already on your tree is connected to you. Remove a relationship below to
                   choose that member again.
                 </p>
               ) : null}
@@ -2652,13 +2766,79 @@ function FamilyTreePage() {
               />
             </label>
             <div className="stack-row">
-              <button type="submit" className="cta-button" disabled={!addToUid}>
+              <button type="submit" className="cta-button" disabled={!addToPersonId}>
                 Add
               </button>
             </div>
           </form>
         </Card>
-        <Card>
+        <Card accent="cool">
+          <SectionHeader title="Add family member" meta="Manual relative profile" />
+          <form className="form-grid" onSubmit={onSubmitManualMember}>
+            <label>
+              Full name
+              <input
+                value={manualForm.displayName}
+                onChange={(e) => setManualForm((current) => ({ ...current, displayName: e.target.value }))}
+                placeholder="Grandma Iris"
+              />
+            </label>
+            <label>
+              Relationship to you
+              <RelationshipCombobox
+                value={manualForm.relationshipType}
+                onChange={(value) => setManualForm((current) => ({ ...current, relationshipType: value }))}
+                ariaLabel="Manual family relationship type"
+                placeholder="Type to search..."
+              />
+            </label>
+            <label>
+              Birth year
+              <input
+                value={manualForm.birthYear}
+                onChange={(e) => setManualForm((current) => ({ ...current, birthYear: e.target.value }))}
+                placeholder="1934"
+                inputMode="numeric"
+              />
+            </label>
+            <label>
+              <span className="stack-row" style={{ justifyContent: 'space-between' }}>
+                <span>Remembered with us</span>
+                <input
+                  type="checkbox"
+                  checked={manualForm.isDeceased}
+                  onChange={(e) => setManualForm((current) => ({ ...current, isDeceased: e.target.checked }))}
+                  style={{ width: 'auto', marginTop: 0 }}
+                />
+              </span>
+            </label>
+            <label>
+              Death year
+              <input
+                value={manualForm.deathYear}
+                onChange={(e) => setManualForm((current) => ({ ...current, deathYear: e.target.value }))}
+                placeholder="2011"
+                inputMode="numeric"
+                disabled={!manualForm.isDeceased}
+              />
+            </label>
+            <label>
+              Photo
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setManualPhotoFile(e.target.files?.[0] ?? null)}
+              />
+              <p className="helper-text">Upload a portrait or memorial image for relatives who are not in the portal.</p>
+            </label>
+            <div className="stack-row">
+              <button type="submit" className="cta-button" disabled={!manualForm.displayName.trim()}>
+                Add family member
+              </button>
+            </div>
+          </form>
+        </Card>
+        <Card className="full-grid">
           <SectionHeader title="My relationships" meta={`${myRelationships.length} links`} />
           <div className="list-stack compact">
             {myRelationships.length === 0 ? (

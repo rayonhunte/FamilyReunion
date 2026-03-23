@@ -73,5 +73,23 @@ service firebase.storage {
         && request.resource.size < 10 * 1024 * 1024
         && imageOrPdf();
     }
+
+    match /family-people/{personId}/{fileName} {
+      allow read: if approved();
+      allow create: if approved()
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*')
+        && firestore.exists(/databases/(default)/documents/familyPeople/$(personId))
+        && (
+          firestore.get(/databases/(default)/documents/familyPeople/$(personId)).data.createdBy == request.auth.uid
+          || firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        );
+      allow delete: if approved()
+        && firestore.exists(/databases/(default)/documents/familyPeople/$(personId))
+        && (
+          firestore.get(/databases/(default)/documents/familyPeople/$(personId)).data.createdBy == request.auth.uid
+          || firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        );
+    }
   }
 }
