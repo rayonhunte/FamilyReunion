@@ -188,6 +188,20 @@ service cloud.firestore {
         && (resource.data.createdBy == request.auth.uid || isAdmin());
     }
 
+    match /familyPeople/{personId} {
+      allow read: if isApproved();
+      allow create: if isApproved()
+        && request.resource.data.displayName is string
+        && request.resource.data.createdBy == request.auth.uid
+        && (!('linkedUserUid' in request.resource.data) || request.resource.data.linkedUserUid == null || request.resource.data.linkedUserUid is string)
+        && (!('photoURL' in request.resource.data) || request.resource.data.photoURL == null || request.resource.data.photoURL is string)
+        && (!('birthYear' in request.resource.data) || request.resource.data.birthYear == null || request.resource.data.birthYear is string)
+        && (!('deathYear' in request.resource.data) || request.resource.data.deathYear == null || request.resource.data.deathYear is string)
+        && (!('isDeceased' in request.resource.data) || request.resource.data.isDeceased is bool);
+      allow update, delete: if isApproved()
+        && (resource.data.createdBy == request.auth.uid || isAdmin());
+    }
+
     match /invites/{inviteId} {
       allow read: if isAdmin();
       allow write: if false;

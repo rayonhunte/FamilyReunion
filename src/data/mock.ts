@@ -6,6 +6,7 @@ import type {
   DirectoryMember,
   EventItem,
   EventRsvp,
+  FamilyPerson,
   FamilyRelationship,
   Flight,
   Hotel,
@@ -59,6 +60,21 @@ export const demoFamilyRelationships: FamilyRelationship[] = [
   { id: 'rel-1', fromUid: 'demo-admin', toUid: 'maya-james', relationshipType: 'parent', createdBy: 'demo-admin', createdAt: null },
   { id: 'rel-2', fromUid: 'demo-admin', toUid: 'rohan-bacchus', relationshipType: 'parent', createdBy: 'demo-admin', createdAt: null },
   { id: 'rel-3', fromUid: 'maya-james', toUid: 'rohan-bacchus', relationshipType: 'sibling', createdBy: 'maya-james', createdAt: null },
+  { id: 'rel-4', fromUid: 'demo-admin', toUid: 'grandma-iris', relationshipType: 'grandchild', createdBy: 'demo-admin', createdAt: null },
+];
+
+export const demoFamilyPeople: FamilyPerson[] = [
+  {
+    id: 'grandma-iris',
+    linkedUserUid: null,
+    displayName: 'Grandma Iris',
+    photoURL: null,
+    birthYear: '1934',
+    deathYear: '2011',
+    isDeceased: true,
+    createdBy: 'demo-admin',
+    createdAt: null,
+  },
 ];
 
 export const demoRegistration: Registration = {

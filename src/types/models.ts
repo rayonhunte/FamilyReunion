@@ -28,6 +28,19 @@ export interface FamilyRelationship {
   createdAt?: unknown;
 }
 
+export interface FamilyPerson {
+  id: string;
+  linkedUserUid?: string | null;
+  displayName: string;
+  photoURL?: string | null;
+  birthYear?: string | null;
+  deathYear?: string | null;
+  isDeceased?: boolean;
+  createdBy: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
 export interface UserProfile {
   id: string;
   uid: string;
@@ -114,7 +127,7 @@ export interface Hotel {
 }
 
 export type AuditAction = 'create' | 'update' | 'delete';
-export type AuditResourceType = 'event' | 'hotel' | 'flight' | 'bulletin_post' | 'asset' | 'bulletin_comment' | 'event_rsvp' | 'registration' | 'user' | 'family_relationship';
+export type AuditResourceType = 'event' | 'hotel' | 'flight' | 'bulletin_post' | 'asset' | 'bulletin_comment' | 'event_rsvp' | 'registration' | 'user' | 'family_relationship' | 'family_person';
 
 export interface AuditLogEntry {
   id: string;

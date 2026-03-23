@@ -24,6 +24,7 @@ import {
   demoComments,
   demoEventRsvps,
   demoEvents,
+  demoFamilyPeople,
   demoFamilyRelationships,
   demoFlights,
   demoHotels,
@@ -46,6 +47,7 @@ import type {
   DirectoryMember,
   EventItem,
   EventRsvp,
+  FamilyPerson,
   FamilyRelationship,
   Flight,
   Hotel,
@@ -241,6 +243,19 @@ export const useFamilyRelationships = () =>
         db
           ? (setData: (value: FamilyRelationship[]) => void) =>
               subscribeCollection<FamilyRelationship>('familyRelationships', [orderBy('createdAt', 'desc')], setData)
+          : undefined,
+      [],
+    ),
+  );
+
+export const useFamilyPeople = () =>
+  useDemoOrLive<FamilyPerson[]>(
+    demoFamilyPeople,
+    useMemo(
+      () =>
+        db
+          ? (setData: (value: FamilyPerson[]) => void) =>
+              subscribeCollection<FamilyPerson>('familyPeople', [orderBy('displayName', 'asc')], setData)
           : undefined,
       [],
     ),
@@ -784,6 +799,16 @@ export const createRelationship = async (payload: {
   return docRef.id;
 };
 
+export const createFamilyPerson = async (payload: Omit<FamilyPerson, 'id' | 'createdAt' | 'updatedAt'>) => {
+  if (!db) return;
+  const docRef = await addDoc(collection(db, 'familyPeople'), {
+    ...payload,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return docRef.id;
+};
+
 export const updateRelationship = async (
   relationshipId: string,
   payload: { relationshipType: RelationshipType },
@@ -860,6 +885,35 @@ export const uploadProfileImage = async (uid: string, file: File) => {
     }
   } catch (err) {
     // Avoid orphaned file in Storage if Firestore rules reject the write
+    try {
+      await deleteObject(storageRef);
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
+
+  return downloadUrl;
+};
+
+export const uploadFamilyPersonPhoto = async (personId: string, file: File) => {
+  if (!db || !storage) {
+    throw new Error('Photo upload needs Firebase Storage configured.');
+  }
+
+  const storagePath = `family-people/${personId}/portrait`;
+  const storageRef = ref(storage, storagePath);
+  const contentType =
+    file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
+  await uploadBytes(storageRef, file, { contentType });
+  const downloadUrl = await getDownloadURL(storageRef);
+
+  try {
+    await updateDoc(doc(db!, 'familyPeople', personId), {
+      photoURL: downloadUrl,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
     try {
       await deleteObject(storageRef);
     } catch {
