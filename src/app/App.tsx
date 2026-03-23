@@ -3559,6 +3559,29 @@ const AdminPage = () => {
     notify('Role updated.', 'updated');
   };
 
+  const deleteMember = async (member: DirectoryMember) => {
+    if (member.uid === profile.uid) {
+      notify('Use another admin account if you need to remove this one.', 'error');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete ${member.displayName}? Their bulletin posts and comments will stay, but their profile, directory entry, flights, RSVPs, files, relationships, and private messages will be removed.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const result = await withToken((token) =>
+      callBackend<{ displayName: string }>(token, 'deleteUser', { uid: member.uid }),
+    );
+    if (!result) {
+      return;
+    }
+
+    notify(`${result.displayName} deleted and cleaned up.`, 'deleted');
+  };
+
   return (
     <section className="page-section hk-unified-page hk-admin-page">
       <SectionIntro eyebrow="Admin" title="Approvals, roles, and invites" body="Privileged actions route through the single HTTPS function so admin credentials never reach the client." />
@@ -3569,6 +3592,9 @@ const AdminPage = () => {
 
         <Card className="full-grid">
           <SectionHeader title="Role assignments" meta="Approved directory" />
+          <p className="helper-text" style={{ marginBottom: '0.9rem' }}>
+            Deleting a user keeps bulletin posts and comments, but removes other account-linked data.
+          </p>
           <div className="list-stack">
             {directory.map((member) => (
               <article className="list-item" key={member.uid}>
@@ -3583,6 +3609,14 @@ const AdminPage = () => {
                     <option value="organizer">organizer</option>
                     <option value="admin">admin</option>
                   </select>
+                  <button
+                    type="button"
+                    className="ghost-button danger-button"
+                    onClick={() => void deleteMember(member)}
+                    disabled={member.uid === profile.uid}
+                  >
+                    Delete user
+                  </button>
                 </div>
               </article>
             ))}
@@ -3592,4 +3626,3 @@ const AdminPage = () => {
     </section>
   );
 };
-

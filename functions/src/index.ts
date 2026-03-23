@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
+import { getStorage } from 'firebase-admin/storage';
 import { onRequest } from 'firebase-functions/v2/https';
 
 initializeApp();
 
 const db = getFirestore();
 const adminAuth = getAuth();
+const adminStorage = getStorage();
 
 type Role = 'member' | 'organizer' | 'admin';
 
@@ -36,6 +38,33 @@ const hasApprovedRole = async (uid: string, roles: Role[]) => {
   const snapshot = await db.collection('users').doc(uid).get();
   const data = snapshot.data();
   return data?.status === 'approved' && roles.includes(data?.role as Role);
+};
+
+const writeAuditLog = async (
+  userId: string,
+  userDisplayName: string,
+  resourceId: string,
+  resourceLabel?: string,
+  details?: string,
+) => {
+  await db.collection('auditLogs').add({
+    userId,
+    userDisplayName,
+    action: 'delete',
+    resourceType: 'user',
+    resourceId,
+    resourceLabel: resourceLabel ?? null,
+    details: details ?? null,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+};
+
+const deleteStoragePath = async (path?: string | null) => {
+  if (!path) {
+    return;
+  }
+
+  await adminStorage.bucket().file(path).delete({ ignoreNotFound: true });
 };
 
 const approveUser = async (callerUid: string, payload: Record<string, unknown>) => {
@@ -110,6 +139,129 @@ const changeRole = async (callerUid: string, payload: Record<string, unknown>) =
   await db.collection('directory').doc(uid).set({ role }, { merge: true });
 
   return json(true, { data: { uid, role } });
+};
+
+const deleteUser = async (callerUid: string, payload: Record<string, unknown>) => {
+  if (!(await hasApprovedRole(callerUid, ['admin']))) {
+    return forbidden('Admin role required.');
+  }
+
+  const uid = typeof payload.uid === 'string' ? payload.uid : '';
+  if (!uid) {
+    return badRequest('Missing user id.');
+  }
+
+  if (uid === callerUid) {
+    return forbidden('Admins cannot delete their own account from the Admin page.');
+  }
+
+  const userRef = db.collection('users').doc(uid);
+  const userSnapshot = await userRef.get();
+  if (!userSnapshot.exists) {
+    return badRequest('User was not found.');
+  }
+
+  const callerSnapshot = await db.collection('users').doc(callerUid).get();
+  const callerDisplayName =
+    (callerSnapshot.data()?.displayName as string | undefined) ?? callerUid;
+
+  const existing = userSnapshot.data() ?? {};
+  const displayName =
+    (existing.displayName as string | undefined) ??
+    (existing.email as string | undefined) ??
+    'Family member';
+
+  const [
+    assetsSnapshot,
+    flightsSnapshot,
+    eventRsvpsSnapshot,
+    relationshipsFromSnapshot,
+    relationshipsToSnapshot,
+    threadsSnapshot,
+    invitesSnapshot,
+    directorySnapshot,
+    registrationSnapshot,
+  ] = await Promise.all([
+    db.collection('assets').where('ownerUid', '==', uid).get(),
+    db.collection('flights').where('ownerUid', '==', uid).get(),
+    db.collection('eventRsvps').where('userId', '==', uid).get(),
+    db.collection('familyRelationships').where('fromUid', '==', uid).get(),
+    db.collection('familyRelationships').where('toUid', '==', uid).get(),
+    db.collection('threads').where('participantIds', 'array-contains', uid).get(),
+    db.collection('invites').where('createdBy', '==', uid).get(),
+    db.collection('directory').doc(uid).get(),
+    db.collection('registrations').doc(uid).get(),
+  ]);
+
+  await Promise.all(
+    assetsSnapshot.docs.map(async (assetDoc) => {
+      const asset = assetDoc.data();
+      await deleteStoragePath(typeof asset.path === 'string' ? asset.path : null);
+      await assetDoc.ref.delete();
+    }),
+  );
+
+  await Promise.all(flightsSnapshot.docs.map((flightDoc) => flightDoc.ref.delete()));
+  await Promise.all(eventRsvpsSnapshot.docs.map((eventRsvpDoc) => eventRsvpDoc.ref.delete()));
+  await Promise.all(relationshipsFromSnapshot.docs.map((relationshipDoc) => relationshipDoc.ref.delete()));
+  await Promise.all(relationshipsToSnapshot.docs.map((relationshipDoc) => relationshipDoc.ref.delete()));
+  await Promise.all(invitesSnapshot.docs.map((inviteDoc) => inviteDoc.ref.delete()));
+
+  let deletedThreadMessageCount = 0;
+  await Promise.all(
+    threadsSnapshot.docs.map(async (threadDoc) => {
+      const messagesSnapshot = await threadDoc.ref.collection('messages').get();
+      deletedThreadMessageCount += messagesSnapshot.size;
+      await Promise.all(messagesSnapshot.docs.map((messageDoc) => messageDoc.ref.delete()));
+      await threadDoc.ref.delete();
+    }),
+  );
+
+  await Promise.all([
+    directorySnapshot.exists ? directorySnapshot.ref.delete() : Promise.resolve(),
+    registrationSnapshot.exists ? registrationSnapshot.ref.delete() : Promise.resolve(),
+    deleteStoragePath(`profile-images/${uid}/avatar-${uid}`),
+    deleteStoragePath(`images/${uid}/avatar-${uid}`),
+  ]);
+
+  try {
+    await adminAuth.deleteUser(uid);
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code !== 'auth/user-not-found') {
+      throw error;
+    }
+  }
+
+  await userRef.delete();
+
+  await writeAuditLog(
+    callerUid,
+    callerDisplayName,
+    uid,
+    displayName,
+    'Deleted account data while preserving bulletin posts and bulletin comments.',
+  );
+
+  return json(true, {
+    data: {
+      uid,
+      displayName,
+      deleted: {
+        assets: assetsSnapshot.size,
+        flights: flightsSnapshot.size,
+        eventRsvps: eventRsvpsSnapshot.size,
+        familyRelationships: relationshipsFromSnapshot.size + relationshipsToSnapshot.size,
+        invites: invitesSnapshot.size,
+        threads: threadsSnapshot.size,
+        threadMessages: deletedThreadMessageCount,
+        directory: directorySnapshot.exists ? 1 : 0,
+        registration: registrationSnapshot.exists ? 1 : 0,
+        userProfile: 1,
+      },
+      preserved: ['bulletinPosts', 'bulletinComments'],
+    },
+  });
 };
 
 const createInvite = async (callerUid: string, payload: Record<string, unknown>) => {
@@ -234,6 +386,9 @@ export const backendApi = onRequest({ region: 'us-central1' }, async (request, r
       break;
     case 'changeRole':
       result = await changeRole(decodedToken.uid, payload);
+      break;
+    case 'deleteUser':
+      result = await deleteUser(decodedToken.uid, payload);
       break;
     case 'createInvite':
       result = await createInvite(decodedToken.uid, payload);
