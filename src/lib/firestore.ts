@@ -63,6 +63,11 @@ import { auth, db, storage } from './firebase';
 const mapDocs = <T extends { id: string }>(snapshot: { docs: Array<{ id: string; data: () => DocumentData }> }) =>
   snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }) as T);
 
+const withoutUndefined = <T extends Record<string, unknown>>(value: T): Partial<T> =>
+  Object.fromEntries(
+    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
+  ) as Partial<T>;
+
 const useDemoOrLive = <T,>(
   initialData: T,
   subscribe?: (setData: (value: T) => void) => () => void,
@@ -483,7 +488,7 @@ export const updateHotel = async (hotelId: string, payload: Partial<Omit<Hotel, 
   }
 
   await updateDoc(doc(db!, 'hotels', hotelId), {
-    ...payload,
+    ...withoutUndefined(payload),
     updatedAt: serverTimestamp(),
   });
 };
