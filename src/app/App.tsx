@@ -323,6 +323,37 @@ const profileImageUploadError = (err: unknown): string => {
   return err instanceof Error ? err.message : 'Photo upload failed.';
 };
 
+const mutationError = (
+  err: unknown,
+  {
+    action,
+    subject,
+    requiresOrganizer = false,
+  }: {
+    action: 'save' | 'publish' | 'update' | 'delete' | 'upload' | 'send' | 'open' | 'start';
+    subject: string;
+    requiresOrganizer?: boolean;
+  },
+): string => {
+  const code =
+    err && typeof err === 'object' && 'code' in err
+      ? String((err as { code?: string }).code)
+      : '';
+
+  if (code === 'permission-denied') {
+    if (requiresOrganizer) {
+      return `You do not have permission to ${action} ${subject}. Only organizers and admins can do this.`;
+    }
+    return `You do not have permission to ${action} ${subject}.`;
+  }
+
+  if (code === 'unavailable') {
+    return `Could not ${action} ${subject} right now. Check your connection and try again.`;
+  }
+
+  return err instanceof Error ? err.message : `Could not ${action} ${subject}.`;
+};
+
 const ProfilePage = () => {
   const { profile, user, isDemoMode } = useAuth();
   const { notify } = useNotification();
@@ -378,7 +409,7 @@ const ProfilePage = () => {
       await tryPushDirectory();
       notify('Profile saved.', 'saved');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not save profile.', 'error');
+      notify(mutationError(err, { action: 'save', subject: 'profile' }), 'error');
     }
   };
 
@@ -688,6 +719,10 @@ const EventsPage = () => {
     if (!profile) {
       return;
     }
+    if (!canManage) {
+      notify('Only organizers and admins can publish events.', 'error');
+      return;
+    }
 
     try {
       const id = await createEvent({
@@ -699,7 +734,7 @@ const EventsPage = () => {
       } as Omit<EventItem, 'id'>);
 
       if (!id) {
-        notify('Could not publish event.', 'error');
+        notify('Firebase is not configured. Add your Firebase environment variables and try again.', 'error');
         return;
       }
 
@@ -707,7 +742,7 @@ const EventsPage = () => {
       setForm({ title: '', description: '', venue: '', startAt: '', endAt: '' });
       notify('Event published.', 'saved');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not publish event.', 'error');
+      notify(mutationError(err, { action: 'publish', subject: 'event', requiresOrganizer: true }), 'error');
     }
   };
 
@@ -794,10 +829,14 @@ const HotelsPage = () => {
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!profile) return;
+    if (!canManage) {
+      notify('Only organizers and admins can save hotel details.', 'error');
+      return;
+    }
     try {
       const id = await createHotel({ ...form, createdBy: profile.uid } as Omit<Hotel, 'id'>);
       if (!id) {
-        notify('Could not save hotel.', 'error');
+        notify('Firebase is not configured. Add your Firebase environment variables and try again.', 'error');
         return;
       }
 
@@ -814,7 +853,7 @@ const HotelsPage = () => {
       });
       notify('Hotel saved.', 'saved');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not save hotel.', 'error');
+      notify(mutationError(err, { action: 'save', subject: 'hotel details', requiresOrganizer: true }), 'error');
     }
   };
 
@@ -934,7 +973,7 @@ const FlightsPage = () => {
         confirmationCode: form.confirmationCode.trim() || undefined,
       });
       if (!id) {
-        notify('Could not save flight.', 'error');
+        notify('Firebase is not configured. Add your Firebase environment variables and try again.', 'error');
         return;
       }
 
@@ -959,7 +998,7 @@ const FlightsPage = () => {
         confirmationCode: '',
       });
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not save flight.', 'error');
+      notify(mutationError(err, { action: 'save', subject: 'flight' }), 'error');
     }
   };
 
@@ -1105,6 +1144,10 @@ const FlightAssetCard = ({
 
   const saveEdit = async () => {
     try {
+      if (!canEdit) {
+        notify('Only organizers and admins can update flights.', 'error');
+        return;
+      }
       await updateFlight(flight.id, {
         ...editForm,
         arrivalAt: editForm.arrivalAt || undefined,
@@ -1116,18 +1159,22 @@ const FlightAssetCard = ({
       setEditing(false);
       notify('Flight updated.', 'updated');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not update flight.', 'error');
+      notify(mutationError(err, { action: 'update', subject: 'flight', requiresOrganizer: true }), 'error');
     }
   };
 
   const onDelete = async () => {
     if (!window.confirm(`Delete "${flightLabel}"? This cannot be undone.`)) return;
     try {
+      if (!canEdit) {
+        notify('Only organizers and admins can delete flights.', 'error');
+        return;
+      }
       await deleteFlight(flight.id);
       await logAuditEvent(ownerUid, ownerName, 'delete', 'flight', flight.id, flightLabel);
       notify('Flight removed.', 'deleted');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not delete flight.', 'error');
+      notify(mutationError(err, { action: 'delete', subject: 'flight', requiresOrganizer: true }), 'error');
     }
   };
 
@@ -1272,7 +1319,7 @@ const BulletinPage = () => {
       setQuickDmMember(null);
       setQuickDmText('');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not send message.', 'error');
+      notify(mutationError(err, { action: 'send', subject: 'message' }), 'error');
     } finally {
       setQuickDmSending(false);
     }
@@ -1309,7 +1356,7 @@ const BulletinPage = () => {
       setNewPost('');
       setBulletinImage(null);
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not publish post.', 'error');
+      notify(mutationError(err, { action: 'publish', subject: 'post' }), 'error');
     }
   };
 
@@ -1330,7 +1377,7 @@ const BulletinPage = () => {
 
       setNewComments((current) => ({ ...current, [post.id]: '' }));
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not add comment.', 'error');
+      notify(mutationError(err, { action: 'publish', subject: 'comment' }), 'error');
     }
   };
 
@@ -1341,56 +1388,68 @@ const BulletinPage = () => {
   };
 
   const saveEdit = async (post: BulletinPost) => {
-    const nextAttachment = editingImage
-      ? await uploadBulletinAttachment({
-          file: editingImage,
-          ownerUid: profile.uid,
-        })
-      : null;
+    try {
+      const nextAttachment = editingImage
+        ? await uploadBulletinAttachment({
+            file: editingImage,
+            ownerUid: profile.uid,
+          })
+        : null;
 
-    if (editingImage && post.attachmentPath) {
-      await deleteStorageFile(post.attachmentPath);
+      if (editingImage && post.attachmentPath) {
+        await deleteStorageFile(post.attachmentPath);
+      }
+
+      await updateBulletinPost(post.id, {
+        body: editingBody.trim(),
+        ...(nextAttachment ?? {}),
+      });
+
+      await logAuditEvent(profile.uid, profile.displayName, 'update', 'bulletin_post', post.id, 'Post');
+      setEditingPostId(null);
+      setEditingBody('');
+      setEditingImage(null);
+      notify('Post updated.', 'updated');
+    } catch (err) {
+      notify(mutationError(err, { action: 'update', subject: 'post' }), 'error');
     }
-
-    await updateBulletinPost(post.id, {
-      body: editingBody.trim(),
-      ...(nextAttachment ?? {}),
-    });
-
-    await logAuditEvent(profile.uid, profile.displayName, 'update', 'bulletin_post', post.id, 'Post');
-    setEditingPostId(null);
-    setEditingBody('');
-    setEditingImage(null);
-    notify('Post updated.', 'updated');
   };
 
   const deletePost = async (post: BulletinPost) => {
     if (!window.confirm('Delete this post? This cannot be undone.')) return;
-    if (post.attachmentPath) {
-      await deleteStorageFile(post.attachmentPath);
+    try {
+      if (post.attachmentPath) {
+        await deleteStorageFile(post.attachmentPath);
+      }
+      await deleteBulletinPost(post.id);
+      await logAuditEvent(profile.uid, profile.displayName, 'delete', 'bulletin_post', post.id, 'Post');
+      setEditingPostId(null);
+      notify('Post removed.', 'deleted');
+    } catch (err) {
+      notify(mutationError(err, { action: 'delete', subject: 'post' }), 'error');
     }
-    await deleteBulletinPost(post.id);
-    await logAuditEvent(profile.uid, profile.displayName, 'delete', 'bulletin_post', post.id, 'Post');
-    setEditingPostId(null);
-    notify('Post removed.', 'deleted');
   };
 
   const removePostImage = async (post: BulletinPost) => {
-    if (post.attachmentPath) {
-      await deleteStorageFile(post.attachmentPath);
-    }
+    try {
+      if (post.attachmentPath) {
+        await deleteStorageFile(post.attachmentPath);
+      }
 
-    await updateBulletinPost(post.id, {
-      attachmentUrl: '',
-      attachmentName: '',
-      attachmentPath: '',
-      attachmentContentType: '',
-      attachmentKind: undefined,
-    });
-    setEditingPostId(null);
-    setEditingBody('');
-    setEditingImage(null);
-    notify('Image removed from post.', 'deleted');
+      await updateBulletinPost(post.id, {
+        attachmentUrl: '',
+        attachmentName: '',
+        attachmentPath: '',
+        attachmentContentType: '',
+        attachmentKind: undefined,
+      });
+      setEditingPostId(null);
+      setEditingBody('');
+      setEditingImage(null);
+      notify('Image removed from post.', 'deleted');
+    } catch (err) {
+      notify(mutationError(err, { action: 'update', subject: 'post image' }), 'error');
+    }
   };
 
   const getTrailingMentionQuery = (text: string) => {
@@ -1848,7 +1907,7 @@ const MessagesPage = () => {
         navigate(`/app/messages/${threadId}`, { replace: true });
       })
       .catch((err) => {
-        notify(err instanceof Error ? err.message : 'Could not open conversation.', 'error');
+        notify(mutationError(err, { action: 'open', subject: 'conversation' }), 'error');
         setPendingThreadMember(null);
         withHandledRef.current = false;
         setSearchParams((prev: URLSearchParams) => {
@@ -1885,7 +1944,7 @@ const MessagesPage = () => {
       const threadId = await createOrGetDirectThread(selfDirectoryEntry, member);
       navigate(`/app/messages/${threadId}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not start conversation.';
+      const message = mutationError(err, { action: 'start', subject: 'conversation' });
       notify(message, 'error');
       setPendingThreadMember(null);
     }
@@ -1919,7 +1978,7 @@ const MessagesPage = () => {
       );
       setMessageText('');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not send message.';
+      const message = mutationError(err, { action: 'send', subject: 'message' });
       notify(message, 'error');
     }
   };
@@ -2028,7 +2087,7 @@ const FilesPage = () => {
       if (id) await logAuditEvent(profile.uid, profile.displayName, 'create', 'asset', id, file.name);
       notify('File uploaded.', 'saved');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'File upload failed.', 'error');
+      notify(mutationError(err, { action: 'upload', subject: 'file' }), 'error');
     } finally {
       event.currentTarget.value = '';
     }
@@ -2037,11 +2096,15 @@ const FilesPage = () => {
   const onDeleteAsset = async (asset: AssetRecord) => {
     if (!window.confirm(`Delete "${asset.fileName}"? This cannot be undone.`)) return;
     try {
+      if (!(profile?.role === 'admin' || profile?.role === 'organizer')) {
+        notify('Only organizers and admins can delete files.', 'error');
+        return;
+      }
       await deleteAsset(asset);
       await logAuditEvent(profile.uid, profile.displayName, 'delete', 'asset', asset.id, asset.fileName);
       notify('File removed.', 'deleted');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not delete file.', 'error');
+      notify(mutationError(err, { action: 'delete', subject: 'file', requiresOrganizer: true }), 'error');
     }
   };
 
@@ -3166,6 +3229,10 @@ const EventAssetCard = ({
 
   const saveEdit = async () => {
     try {
+      if (!canEdit) {
+        notify('Only organizers and admins can update events.', 'error');
+        return;
+      }
       await updateEvent(eventItem.id, {
         title: editForm.title,
         description: editForm.description,
@@ -3177,18 +3244,22 @@ const EventAssetCard = ({
       setEditingEventId(null);
       notify('Event updated.', 'updated');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not update event.', 'error');
+      notify(mutationError(err, { action: 'update', subject: 'event', requiresOrganizer: true }), 'error');
     }
   };
 
   const onDelete = async () => {
     if (!window.confirm(`Delete "${eventItem.title}"? This cannot be undone.`)) return;
     try {
+      if (!canEdit) {
+        notify('Only organizers and admins can delete events.', 'error');
+        return;
+      }
       await deleteEvent(eventItem.id);
       await logAuditEvent(ownerUid, ownerName, 'delete', 'event', eventItem.id, eventItem.title);
       notify('Event removed.', 'deleted');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not delete event.', 'error');
+      notify(mutationError(err, { action: 'delete', subject: 'event', requiresOrganizer: true }), 'error');
     }
   };
 
@@ -3304,6 +3375,10 @@ const HotelAssetCard = ({
 
   const saveEdit = async () => {
     try {
+      if (!canEdit) {
+        notify('Only organizers and admins can save hotel details.', 'error');
+        return;
+      }
       await updateHotel(hotel.id, {
         ...editForm,
         deadline: editForm.deadline || undefined,
@@ -3312,18 +3387,22 @@ const HotelAssetCard = ({
       setEditing(false);
       notify('Hotel updated.', 'updated');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not update hotel.', 'error');
+      notify(mutationError(err, { action: 'update', subject: 'hotel details', requiresOrganizer: true }), 'error');
     }
   };
 
   const onDelete = async () => {
     if (!window.confirm(`Delete "${hotel.name}"? This cannot be undone.`)) return;
     try {
+      if (!canEdit) {
+        notify('Only organizers and admins can delete hotels.', 'error');
+        return;
+      }
       await deleteHotel(hotel.id);
       await logAuditEvent(ownerUid, ownerName, 'delete', 'hotel', hotel.id, hotel.name);
       notify('Hotel removed.', 'deleted');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not delete hotel.', 'error');
+      notify(mutationError(err, { action: 'delete', subject: 'hotel', requiresOrganizer: true }), 'error');
     }
   };
 
@@ -3420,6 +3499,11 @@ const AssociatedAssetSection = ({
     if (!file || !ownerUid) {
       return;
     }
+    if (!canManage) {
+      notify('Only organizers and admins can upload attachments here.', 'error');
+      event.currentTarget.value = '';
+      return;
+    }
 
     if (file.size > maxFileSizeBytes) {
       notify('Please upload files smaller than 5MB (images or PDFs).', 'error');
@@ -3444,7 +3528,7 @@ const AssociatedAssetSection = ({
       setDescription('');
       notify('Attachment uploaded.', 'saved');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Attachment upload failed.', 'error');
+      notify(mutationError(err, { action: 'upload', subject: 'attachment', requiresOrganizer: true }), 'error');
     } finally {
       event.currentTarget.value = '';
     }
@@ -3452,11 +3536,15 @@ const AssociatedAssetSection = ({
 
   const onDelete = async (asset: AssetRecord) => {
     try {
+      if (!canManage) {
+        notify('Only organizers and admins can delete attachments.', 'error');
+        return;
+      }
       await deleteAsset(asset);
       await logAuditEvent(ownerUid, ownerName, 'delete', 'asset', asset.id, asset.fileName);
       notify('File removed.', 'deleted');
     } catch (err) {
-      notify(err instanceof Error ? err.message : 'Could not delete file.', 'error');
+      notify(mutationError(err, { action: 'delete', subject: 'file', requiresOrganizer: true }), 'error');
     }
   };
 
