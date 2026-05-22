@@ -3201,12 +3201,23 @@ const EventAssetCard = ({
   const isEditing = editingEventId === eventItem.id;
 
   const myRsvp = rsvps.find((r) => r.userId === ownerUid);
-  const attendingCount = rsvps.filter((r) => r.status === 'attending').length;
-  const maybeCount = rsvps.filter((r) => r.status === 'maybe').length;
+  const headcount = (status: RSVPStatus) =>
+    rsvps
+      .filter((r) => r.status === status)
+      .reduce((sum, r) => sum + (r.partySize && r.partySize > 0 ? r.partySize : 1), 0);
+  const attendingCount = headcount('attending');
+  const maybeCount = headcount('maybe');
 
-  const onRsvpChange = async (status: RSVPStatus) => {
+  const [partyInput, setPartyInput] = useState(myRsvp?.partySize ?? 1);
+  const [syncedPartySize, setSyncedPartySize] = useState(myRsvp?.partySize);
+  if (myRsvp?.partySize !== syncedPartySize) {
+    setSyncedPartySize(myRsvp?.partySize);
+    setPartyInput(myRsvp?.partySize && myRsvp.partySize > 0 ? myRsvp.partySize : 1);
+  }
+
+  const onRsvpChange = async (status: RSVPStatus, partySize = partyInput) => {
     try {
-      await setEventRsvp(ownerUid, eventItem.id, ownerName, status);
+      await setEventRsvp(ownerUid, eventItem.id, ownerName, status, partySize);
       notify(
         status === 'attending' ? 'You’re attending this event.' : status === 'maybe' ? 'Marked as maybe.' : 'RSVP updated.',
         'saved',
@@ -3318,6 +3329,21 @@ const EventAssetCard = ({
               <option value="not-attending">Not attending</option>
             </select>
           </label>
+          {(myRsvp?.status === 'attending' || myRsvp?.status === 'maybe') && (
+            <label className="event-rsvp-label">
+              <span className="helper-text">People in your party</span>
+              <input
+                type="number"
+                min={1}
+                value={partyInput}
+                onChange={(e) => setPartyInput(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+                onBlur={() => {
+                  if (myRsvp && partyInput !== myRsvp.partySize) void onRsvpChange(myRsvp.status, partyInput);
+                }}
+                aria-label={`Number of people in your party for ${eventItem.title}`}
+              />
+            </label>
+          )}
           {(attendingCount > 0 || maybeCount > 0) && (
             <span className="event-rsvp-counts helper-text">
               {attendingCount > 0 && `${attendingCount} attending`}
@@ -3709,7 +3735,7 @@ const InviteLinkCard = () => {
 
   const createInvite = async () => {
     const response = await withToken<{ inviteUrl: string }>((token) =>
-      callBackend(token, 'createInvite', { expiresInDays: 14 }),
+      callBackend(token, 'createInvite', { expiresInDays: 14, origin: window.location.origin }),
     );
     if (response?.inviteUrl) {
       setInviteLink(response.inviteUrl);

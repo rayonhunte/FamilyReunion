@@ -282,7 +282,8 @@ const createInvite = async (callerUid: string, payload: Record<string, unknown>)
     expiresAt,
   });
 
-  const baseUrl = process.env.APP_BASE_URL || 'http://localhost:5173';
+  const requestedOrigin = typeof payload.origin === 'string' && /^https:\/\/[^\s/]+$/.test(payload.origin) ? payload.origin : '';
+  const baseUrl = requestedOrigin || process.env.APP_BASE_URL || 'http://localhost:5173';
   return json(true, { data: { token, inviteUrl: `${baseUrl.replace(/\/$/, '')}/?invite=${token}` } });
 };
 

@@ -450,6 +450,7 @@ export const setEventRsvp = async (
   eventId: string,
   displayName: string,
   status: RSVPStatus,
+  partySize = 1,
 ) => {
   if (!db) {
     return;
@@ -464,6 +465,7 @@ export const setEventRsvp = async (
       eventId,
       displayName,
       status,
+      partySize: Math.max(1, Math.round(partySize)),
       updatedAt: serverTimestamp(),
     },
     { merge: true },
