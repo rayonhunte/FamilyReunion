@@ -110,6 +110,7 @@ export interface EventRsvp {
   eventId: string;
   displayName: string;
   status: RSVPStatus;
+  partySize?: number;
   updatedAt?: unknown;
 }
 
