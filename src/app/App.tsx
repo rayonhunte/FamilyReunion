@@ -3208,14 +3208,18 @@ const EventAssetCard = ({
   const attendingCount = headcount('attending');
   const maybeCount = headcount('maybe');
 
-  const [partyInput, setPartyInput] = useState(myRsvp?.partySize ?? 1);
+  const [partyInput, setPartyInput] = useState(String(myRsvp?.partySize ?? 1));
   const [syncedPartySize, setSyncedPartySize] = useState(myRsvp?.partySize);
   if (myRsvp?.partySize !== syncedPartySize) {
     setSyncedPartySize(myRsvp?.partySize);
-    setPartyInput(myRsvp?.partySize && myRsvp.partySize > 0 ? myRsvp.partySize : 1);
+    setPartyInput(String(myRsvp?.partySize && myRsvp.partySize > 0 ? myRsvp.partySize : 1));
   }
+  const normalizedParty = () => {
+    const n = Math.round(Number(partyInput));
+    return Number.isFinite(n) && n >= 1 ? n : 1;
+  };
 
-  const onRsvpChange = async (status: RSVPStatus, partySize = partyInput) => {
+  const onRsvpChange = async (status: RSVPStatus, partySize = normalizedParty()) => {
     try {
       await setEventRsvp(ownerUid, eventItem.id, ownerName, status, partySize);
       notify(
@@ -3336,9 +3340,11 @@ const EventAssetCard = ({
                 type="number"
                 min={1}
                 value={partyInput}
-                onChange={(e) => setPartyInput(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+                onChange={(e) => setPartyInput(e.target.value)}
                 onBlur={() => {
-                  if (myRsvp && partyInput !== myRsvp.partySize) void onRsvpChange(myRsvp.status, partyInput);
+                  const n = normalizedParty();
+                  setPartyInput(String(n));
+                  if (myRsvp && n !== myRsvp.partySize) void onRsvpChange(myRsvp.status, n);
                 }}
                 aria-label={`Number of people in your party for ${eventItem.title}`}
               />
