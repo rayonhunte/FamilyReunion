@@ -7,7 +7,7 @@ export const LandingPage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (profile?.status === 'pending') {
+    if (profile?.status === 'disabled') {
       navigate('/pending', { replace: true });
     }
   }, [navigate, profile]);
@@ -31,7 +31,7 @@ export const LandingPage = () => {
               </p>
               <div className="hk-hero-actions">
                 <button className="hk-primary-btn" onClick={() => void signInWithGoogle()}>
-                  {isDemoMode ? 'Open Demo Portal' : 'Login or Request Access'}
+                  {isDemoMode ? 'Open Demo Portal' : 'Login'}
                 </button>
               </div>
             </div>

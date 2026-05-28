@@ -118,32 +118,67 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         };
 
         if (!snapshot.exists()) {
-          if (AUTH_DEBUG) console.log('[Auth] Creating new user doc, status=', isBootstrapAdmin ? 'approved' : 'pending');
+          if (AUTH_DEBUG) console.log('[Auth] Creating new user doc, status=approved');
           await setDoc(
             userRef,
             {
               ...baseProfile,
-              status: isBootstrapAdmin ? 'approved' : 'pending',
+              status: 'approved',
               role: isBootstrapAdmin ? 'admin' : 'member',
               createdAt: serverTimestamp(),
-              ...(isBootstrapAdmin ? { approvedAt: serverTimestamp() } : {}),
-            },
-            { merge: true },
-          );
-        } else if (isBootstrapAdmin) {
-          if (AUTH_DEBUG) console.log('[Auth] Updating existing user to approved (bootstrap admin)');
-          // Do not merge baseProfile here — it would overwrite Firestore photoURL / displayName
-          // with Google Auth values on every reload and wipe uploaded profile photos.
-          await setDoc(
-            userRef,
-            {
-              status: 'approved',
-              role: 'admin',
               approvedAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
             },
             { merge: true },
           );
+          await setDoc(
+            doc(firestore, 'directory', firebaseUser.uid),
+            {
+              uid: firebaseUser.uid,
+              displayName: baseProfile.displayName,
+              email: baseProfile.email,
+              photoURL: baseProfile.photoURL,
+              role: isBootstrapAdmin ? 'admin' : 'member',
+              groupId: null,
+            },
+            { merge: true },
+          );
+        } else {
+          const existing = snapshot.data() ?? {};
+          const nextStatus = existing.status === 'disabled' ? 'disabled' : 'approved';
+          const nextRole = isBootstrapAdmin ? 'admin' : (existing.role ?? 'member');
+          const needsAccessUpgrade =
+            existing.status !== nextStatus
+            || existing.role !== nextRole
+            || (nextStatus === 'approved' && !existing.approvedAt);
+
+          if (needsAccessUpgrade) {
+            if (AUTH_DEBUG) console.log('[Auth] Updating existing user access', { nextStatus, nextRole });
+            await setDoc(
+              userRef,
+              {
+                status: nextStatus,
+                role: nextRole,
+                ...(nextStatus === 'approved' ? { approvedAt: existing.approvedAt ?? serverTimestamp() } : {}),
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true },
+            );
+          }
+
+          if (nextStatus === 'approved') {
+            await setDoc(
+              doc(firestore, 'directory', firebaseUser.uid),
+              {
+                uid: firebaseUser.uid,
+                displayName: existing.displayName ?? baseProfile.displayName,
+                email: existing.email ?? baseProfile.email,
+                photoURL: existing.photoURL ?? baseProfile.photoURL,
+                role: nextRole,
+                groupId: existing.groupId ?? null,
+              },
+              { merge: true },
+            );
+          }
         }
       } catch (authError) {
         if (AUTH_DEBUG) console.error('[Auth] getDoc/setDoc error:', authError);

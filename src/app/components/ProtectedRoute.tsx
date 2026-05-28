@@ -10,7 +10,7 @@ export const ProtectedRoute = ({ children }: { children: ReactNode }) => {
     return <Navigate to="/" replace state={{ from: location.pathname }} />;
   }
 
-  if (profile?.status !== 'approved') {
+  if (profile?.status === 'disabled') {
     return <Navigate to="/pending" replace />;
   }
 

@@ -445,6 +445,19 @@ export const useEventRsvps = (eventId: string) => {
   );
 };
 
+export const useAllEventRsvps = () =>
+  useDemoOrLive<EventRsvp[]>(
+    demoEventRsvps,
+    useMemo(
+      () =>
+        db
+          ? (setData: (value: EventRsvp[]) => void) =>
+              subscribeCollection<EventRsvp>('eventRsvps', [], setData)
+          : undefined,
+      [],
+    ),
+  );
+
 export const setEventRsvp = async (
   userId: string,
   eventId: string,
