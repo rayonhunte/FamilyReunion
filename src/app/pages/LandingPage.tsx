@@ -27,7 +27,7 @@ export const LandingPage = () => {
             <div className="hk-hero-overlay">
               <h2>Welcome home, family</h2>
               <p>
-                The Miller Family Reunion 2024 is more than a date on the calendar. It is a return to the hearth.
+                The Kilkenny/Andrews Family Reunion
               </p>
               <div className="hk-hero-actions">
                 <button className="hk-primary-btn" onClick={() => void signInWithGoogle()}>
