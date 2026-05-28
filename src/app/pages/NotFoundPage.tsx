@@ -18,8 +18,8 @@ export const NotFoundPage = () => {
           className="not-found-image"
         />
         <div className="not-found-actions">
-          <Link to={user && profile?.status === 'approved' ? '/app' : '/'} className="cta-button">
-            {user && profile?.status === 'approved' ? 'Back to portal' : 'Back to home'}
+          <Link to={user && profile?.status !== 'disabled' ? '/app' : '/'} className="cta-button">
+            {user && profile?.status !== 'disabled' ? 'Back to portal' : 'Back to home'}
           </Link>
         </div>
       </div>
