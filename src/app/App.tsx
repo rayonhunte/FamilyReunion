@@ -51,6 +51,7 @@ import {
   useBulletinPosts,
   useDirectory,
   useEventRsvps,
+  useAllEventRsvps,
   useEvents,
   useFamilyPeople,
   useFamilyRelationships,
@@ -122,14 +123,14 @@ export const App = () => {
     return <FullscreenState title="Loading portal" description="Checking your member access and reunion profile." />;
   }
 
-  const canAccessApp = Boolean(user && profile?.status === 'approved');
+  const canAccessApp = Boolean(user && profile?.status !== 'disabled');
 
   return (
     <Routes>
       <Route path="/" element={canAccessApp ? <Navigate to="/app" replace /> : <LandingPage />} />
       <Route
         path="/pending"
-        element={!user ? <Navigate to="/" replace /> : profile?.status === 'approved' ? <Navigate to="/app" replace /> : <PendingPage />}
+        element={!user ? <Navigate to="/" replace /> : profile?.status !== 'disabled' ? <Navigate to="/app" replace /> : <PendingPage />}
       />
       <Route
         path="/app/*"
@@ -162,6 +163,7 @@ export const App = () => {
 
 const OverviewPage = () => {
   const { data: events } = useEvents();
+  const { data: eventRsvps } = useAllEventRsvps();
   const { data: hotels } = useHotels();
   const { data: posts } = useBulletinPosts();
   const { data: assets } = useAssets();
@@ -206,6 +208,23 @@ const OverviewPage = () => {
     : 'Date TBD';
   const attendingCount = registrations.filter((registration) => registration.rsvpStatus === 'attending').length;
   const bannerRsvp = attendingCount > 0 ? `${attendingCount} RSVPs confirmed.` : 'RSVPs pending.';
+  const eventSignupSummary = useMemo(
+    () =>
+      [...events]
+        .sort((a, b) => Date.parse(String(a.startAt)) - Date.parse(String(b.startAt)))
+        .slice(0, 3)
+        .map((event) => {
+          const eventEntries = eventRsvps.filter((entry) => entry.eventId === event.id);
+          const attending = eventEntries.filter((entry) => entry.status === 'attending');
+          const maybe = eventEntries.filter((entry) => entry.status === 'maybe');
+          return {
+            event,
+            attending,
+            maybe,
+          };
+        }),
+    [eventRsvps, events],
+  );
 
   return (
     <section className="page-section hk-dashboard-page">
@@ -272,6 +291,28 @@ const OverviewPage = () => {
 
         <aside className="hk-dashboard-side">
           <article className="hk-checklist-card">
+            <h3>Event signups</h3>
+            <div className="list-stack compact">
+              {eventSignupSummary.length ? eventSignupSummary.map(({ event, attending, maybe }) => (
+                <div key={event.id} className="list-item">
+                  <div>
+                    <strong>{event.title}</strong>
+                    <p>{formatDateTime(event.startAt)}</p>
+                    <p>
+                      {attending.length
+                        ? `Attending: ${attending.map((entry) => entry.displayName).join(', ')}`
+                        : 'Attending: no confirmed RSVPs yet.'}
+                    </p>
+                    {maybe.length ? <p>{`Maybe: ${maybe.map((entry) => entry.displayName).join(', ')}`}</p> : null}
+                  </div>
+                </div>
+              )) : (
+                <p className="helper-text">Event RSVPs will appear here as family members respond.</p>
+              )}
+            </div>
+          </article>
+
+          <article className="hk-checklist-card">
             <h3>Preparation Guide</h3>
             <ul>
               <li>Update profile info</li>
@@ -294,7 +335,7 @@ const OverviewPage = () => {
         </aside>
       </div>
       <div className="stats-grid hk-dashboard-stats">
-        <StatCard title="Upcoming events" value={String(events.length)} detail="Schedule items available to approved members." />
+        <StatCard title="Upcoming events" value={String(events.length)} detail="Schedule items available to all signed-in members." />
         <StatCard title="Hotel blocks" value={String(hotels.length)} detail="Informational stays with deadline and booking links." />
         <StatCard title="Bulletin posts" value={String(posts.length)} detail="Announcements and discussions shared with the family." />
         <StatCard title="Shared files" value={String(assets.length)} detail="Images and PDFs stored in Firebase Storage." />
@@ -3696,9 +3737,9 @@ const PendingApprovalsCard = () => {
 
   return (
     <Card accent="warm">
-      <SectionHeader title="Pending join requests" meta={`${pendingUsers.length} waiting`} />
+      <SectionHeader title="Member access" meta={pendingUsers.length > 0 ? `${pendingUsers.length} legacy pending` : 'Automatic access enabled'} />
       <p className="helper-text">
-        Approve people who signed in and are waiting for access. They join as <strong>members</strong>. Admins can promote roles from the Admin page.
+        New sign-ins now receive default <strong>member</strong> access automatically. Admins can still clear any older pending accounts here and promote roles from the Admin page.
       </p>
       <div className="list-stack">
         {pendingUsers.length === 0 ? (
