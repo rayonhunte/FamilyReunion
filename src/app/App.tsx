@@ -253,16 +253,16 @@ const OverviewPage = () => {
 
           <div className="hk-upcoming-grid">
             <article className="hk-upcoming-card">
-              <p className="hk-card-tag">Booked</p>
-              <h4>{hotels[0]?.name ?? 'Grand Tahoe Lodge'}</h4>
-              <p>{hotels[0]?.deadline ? `Deadline ${formatDate(hotels[0].deadline)}` : 'Check-in Friday, July 12'}</p>
-              <Link to="/app/hotels">Get directions</Link>
+              <p className="hk-card-tag">{hotels[0] ? 'Booked' : 'Lodging'}</p>
+              <h4>{hotels[0]?.name ?? 'No hotel options added yet'}</h4>
+              <p>{hotels[0]?.deadline ? `Deadline ${formatDate(hotels[0].deadline)}` : 'Hotel recommendations will show up here once organizers publish them.'}</p>
+              <Link to="/app/hotels">{hotels[0] ? 'Get directions' : 'Browse hotels'}</Link>
             </article>
             <article className="hk-upcoming-card">
-              <p className="hk-card-tag">Day 1</p>
-              <h4>{upcomingEvents[0]?.title ?? 'Welcome BBQ'}</h4>
-              <p>{upcomingEvents[0] ? formatDateTime(upcomingEvents[0].startAt) : '6:00 PM at the pavilion'}</p>
-              <Link to="/app/events">See potluck list</Link>
+              <p className="hk-card-tag">{upcomingEvents[0] ? 'Day 1' : 'Schedule'}</p>
+              <h4>{upcomingEvents[0]?.title ?? 'No upcoming events yet'}</h4>
+              <p>{upcomingEvents[0] ? formatDateTime(upcomingEvents[0].startAt) : 'Organizers have not published the event schedule yet.'}</p>
+              <Link to="/app/events">{upcomingEvents[0] ? 'View event details' : 'View schedule'}</Link>
             </article>
           </div>
 
@@ -356,10 +356,10 @@ const profileImageUploadError = (err: unknown): string => {
       ? String((err as { code?: string }).code)
       : '';
   if (code === 'storage/unauthorized') {
-    return 'Photo upload was denied. Deploy the latest Storage rules (`firebase deploy --only storage`) or use a JPG/PNG under 5MB.';
+    return 'Photo upload was denied. Please try a JPG or PNG under 5MB, or contact an organizer if the problem continues.';
   }
   if (code === 'permission-denied') {
-    return 'Could not save photo URL to your profile. Check Firestore rules.';
+    return 'We could not save your profile photo right now. Please try again in a moment.';
   }
   return err instanceof Error ? err.message : 'Photo upload failed.';
 };
@@ -3248,6 +3248,15 @@ const EventAssetCard = ({
       .reduce((sum, r) => sum + (r.partySize && r.partySize > 0 ? r.partySize : 1), 0);
   const attendingCount = headcount('attending');
   const maybeCount = headcount('maybe');
+  const [showRsvpDetails, setShowRsvpDetails] = useState(false);
+  const attendingGuests = useMemo(
+    () => rsvps.filter((entry) => entry.status === 'attending'),
+    [rsvps],
+  );
+  const maybeGuests = useMemo(
+    () => rsvps.filter((entry) => entry.status === 'maybe'),
+    [rsvps],
+  );
 
   const [partyInput, setPartyInput] = useState(String(myRsvp?.partySize ?? 1));
   const [syncedPartySize, setSyncedPartySize] = useState(myRsvp?.partySize);
@@ -3268,7 +3277,7 @@ const EventAssetCard = ({
         'saved',
       );
     } catch {
-      notify('Could not save your RSVP. If this keeps happening, ask an organizer to deploy the latest Firestore rules.', 'error');
+      notify('Could not save your RSVP right now. Please try again, or contact an organizer if it keeps happening.', 'error');
     }
   };
 
@@ -3391,14 +3400,48 @@ const EventAssetCard = ({
               />
             </label>
           )}
-          {(attendingCount > 0 || maybeCount > 0) && (
-            <span className="event-rsvp-counts helper-text">
+          {(attendingCount > 0 || maybeCount > 0) ? (
+            <button
+              type="button"
+              className="event-rsvp-summary-button helper-text"
+              onClick={() => setShowRsvpDetails((value) => !value)}
+              aria-expanded={showRsvpDetails}
+            >
               {attendingCount > 0 && `${attendingCount} attending`}
               {attendingCount > 0 && maybeCount > 0 && ', '}
               {maybeCount > 0 && `${maybeCount} maybe`}
-            </span>
-          )}
+              {` ${showRsvpDetails ? 'Hide details' : 'View who RSVPed'}`}
+            </button>
+          ) : null}
         </div>
+        {showRsvpDetails ? (
+          <div className="event-rsvp-details">
+            {attendingGuests.length ? (
+              <div>
+                <strong>Attending</strong>
+                <ul className="event-rsvp-list">
+                  {attendingGuests.map((entry) => (
+                    <li key={entry.id}>
+                      {entry.displayName} · {entry.partySize && entry.partySize > 0 ? entry.partySize : 1}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {maybeGuests.length ? (
+              <div>
+                <strong>Maybe</strong>
+                <ul className="event-rsvp-list">
+                  {maybeGuests.map((entry) => (
+                    <li key={entry.id}>
+                      {entry.displayName} · {entry.partySize && entry.partySize > 0 ? entry.partySize : 1}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <AssociatedAssetSection
           title="Event attachments"
           relatedType="event"
@@ -3519,10 +3562,14 @@ const HotelAssetCard = ({
         <div className="timeline-meta">
           <span>{hotel.roomBlock}</span>
           <span>Deadline: {formatDate(hotel.deadline)}</span>
-          <a className="ghost-link" href={hotel.bookingUrl} target="_blank" rel="noreferrer">
-            Visit booking link
-          </a>
         </div>
+        {hotel.bookingUrl ? (
+          <div className="stack-row hotel-booking-actions">
+            <a className="cta-button" href={hotel.bookingUrl} target="_blank" rel="noreferrer">
+              Book this hotel
+            </a>
+          </div>
+        ) : null}
         <AssociatedAssetSection
           title="Hotel attachments"
           relatedType="hotel"
